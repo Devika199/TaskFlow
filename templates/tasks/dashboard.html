@@ -1,0 +1,341 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Welcome Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h3 class="fw-bold mb-1">
+      Welcome back, {{ user.display_name }}! 👋
+    </h3>
+    <p class="text-muted small mb-0">
+      Here is what is happening across your projects and team today.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'kanban' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-layout-three-columns me-1"></i>Kanban Board
+    </a>
+    {% if user.is_admin_role %}
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#quickNewTaskModal">
+      <i class="bi bi-plus-lg me-1"></i>New Task
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- KPI Metrics Cards Row -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">Total Tasks</div>
+        <div class="kpi-value">{{ total_tasks_count }}</div>
+        <div class="small text-muted mt-1">
+          <span class="text-success fw-bold"><i class="bi bi-check-circle me-1"></i>{{ completed_count }}</span> completed
+        </div>
+      </div>
+      <div class="kpi-icon-wrapper bg-primary-subtle text-primary">
+        <i class="bi bi-list-task"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">In Progress</div>
+        <div class="kpi-value text-primary">{{ in_progress_count }}</div>
+        <div class="small text-muted mt-1">
+          <span class="fw-semibold text-secondary">{{ todo_count }}</span> in backlog
+        </div>
+      </div>
+      <div class="kpi-icon-wrapper bg-info-subtle text-info">
+        <i class="bi bi-arrow-repeat"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">Overdue Tasks</div>
+        <div class="kpi-value {% if overdue_count > 0 %}text-danger{% else %}text-muted{% endif %}">
+          {{ overdue_count }}
+        </div>
+        <div class="small text-muted mt-1">
+          {% if overdue_count > 0 %}
+          <span class="badge badge-overdue">Requires attention</span>
+          {% else %}
+          <span class="text-success"><i class="bi bi-shield-check me-1"></i>All on track</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="kpi-icon-wrapper bg-danger-subtle text-danger">
+        <i class="bi bi-exclamation-octagon"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">Completion Rate</div>
+        <div class="kpi-value text-success">{{ completion_rate }}%</div>
+        <div class="progress mt-2" style="height: 6px; width: 100%;">
+          <div class="progress-bar bg-success" role="progressbar" style="width: {{ completion_rate }}%;"></div>
+        </div>
+      </div>
+      <div class="kpi-icon-wrapper bg-success-subtle text-success">
+        <i class="bi bi-graph-up-arrow"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-5">
+    <div class="card-saas h-100">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-pie-chart text-primary me-2"></i>Status Distribution</span>
+        <span class="badge bg-light text-secondary border">Real-time</span>
+      </div>
+      <div class="card-body d-flex flex-column align-items-center justify-content-center p-4">
+        <div style="position: relative; width: 100%; max-height: 240px;">
+          <canvas id="statusChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card-saas h-100">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-bar-chart text-primary me-2"></i>Tasks by Priority</span>
+        <span class="badge bg-light text-secondary border">Urgency Matrix</span>
+      </div>
+      <div class="card-body p-4">
+        <div style="position: relative; width: 100%; max-height: 240px;">
+          <canvas id="priorityChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if user.is_admin_role and team_workload %}
+<!-- Admin Team Workload Visibility Card -->
+<div class="card-saas mb-4">
+  <div class="card-header">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-people-fill text-primary"></i>
+      <span class="fw-bold">Team Workload Distribution</span>
+    </div>
+    <a href="{% url 'user_management' %}" class="small text-decoration-none fw-semibold">Manage Team &rarr;</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light small">
+          <tr>
+            <th class="ps-4">Team Member</th>
+            <th>Department</th>
+            <th>Active Tasks</th>
+            <th>Overdue</th>
+            <th>Progress Bar</th>
+            <th class="text-end pe-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for member in team_workload %}
+          <tr>
+            <td class="ps-4">
+              <div class="d-flex align-items-center gap-2">
+                <div class="user-avatar user-avatar-sm" style="background-color: {{ member.avatar_color|default:'#4f46e5' }};">
+                  {{ member.initials }}
+                </div>
+                <div>
+                  <div class="fw-bold small">{{ member.display_name }}</div>
+                  <div class="text-muted" style="font-size: 0.72rem;">@{{ member.username }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="small text-muted">{{ member.department|default:'General' }}</td>
+            <td>
+              <span class="badge bg-primary-subtle text-primary fw-bold">{{ member.active_tasks }}</span>
+            </td>
+            <td>
+              {% if member.overdue_tasks > 0 %}
+              <span class="badge bg-danger-subtle text-danger fw-bold">{{ member.overdue_tasks }} overdue</span>
+              {% else %}
+              <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+            <td style="min-width: 140px;">
+              <div class="progress" style="height: 6px;">
+                <div class="progress-bar bg-primary" role="progressbar" style="width: {% if member.active_tasks|add:member.completed_tasks %}{% widthratio member.active_tasks member.active_tasks|add:member.completed_tasks 100 %}{% else %}0{% endif %}%;"></div>
+                <div class="progress-bar bg-success" role="progressbar" style="width: {% if member.active_tasks|add:member.completed_tasks %}{% widthratio member.completed_tasks member.active_tasks|add:member.completed_tasks 100 %}{% else %}0{% endif %}%;"></div>
+              </div>
+            </td>
+            <td class="text-end pe-4">
+              <a href="{% url 'task_list' %}?assigned_to={{ member.id }}" class="btn btn-sm btn-light border py-1 px-2" title="View Member's Tasks">
+                <i class="bi bi-eye"></i> Tasks
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Tasks & Recent Activities Row -->
+<div class="row g-4">
+  <!-- My Urgent Tasks or Recent Tasks -->
+  <div class="col-lg-7">
+    <div class="card-saas h-100">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-clock-history text-primary me-2"></i>My Active &amp; Urgent Tasks</span>
+        <a href="{% url 'task_list' %}?assigned_to=me" class="small text-decoration-none fw-semibold">View All &rarr;</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          {% for task in my_urgent_tasks %}
+          <div class="list-group-item p-3 d-flex align-items-center justify-content-between gap-3">
+            <div class="overflow-hidden">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none text-truncate d-inline-block" style="max-width: 320px;">
+                  {{ task.title }}
+                </a>
+                {% if task.is_overdue %}
+                <span class="badge badge-overdue small">Overdue</span>
+                {% elif task.due_status == 'today' %}
+                <span class="badge bg-warning-subtle text-warning-emphasis small">Due Today</span>
+                {% endif %}
+              </div>
+              <div class="d-flex align-items-center gap-3 small text-muted">
+                <span>
+                  <i class="bi bi-flag-fill me-1 {% if task.priority == 'HIGH' %}text-danger{% elif task.priority == 'MEDIUM' %}text-warning{% else %}text-secondary{% endif %}"></i>
+                  {{ task.get_priority_display }}
+                </span>
+                {% if task.due_date %}
+                <span><i class="bi bi-calendar3 me-1"></i>{{ task.due_date|date:"M d" }}</span>
+                {% endif %}
+                <span><i class="bi bi-chat-left-dots me-1"></i>{{ task.comments.count }}</span>
+              </div>
+            </div>
+            <div>
+              <span class="badge badge-status-{{ task.status|lower|cut:'_' }}">
+                {{ task.get_status_display }}
+              </span>
+            </div>
+          </div>
+          {% empty %}
+          <div class="p-4 text-center text-muted">
+            <i class="bi bi-check2-circle fs-2 text-success d-block mb-2"></i>
+            You have no pending urgent tasks! You are all caught up.
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Activity Feed -->
+  <div class="col-lg-5">
+    <div class="card-saas h-100">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-activity text-primary me-2"></i>Recent System Activity</span>
+      </div>
+      <div class="card-body p-4">
+        <div class="timeline-list">
+          {% for act in recent_activities %}
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="small">
+              <span class="fw-bold text-dark">{{ act.actor.display_name|default:'System' }}</span>
+              <span class="text-secondary">{{ act.details|truncatechars:70 }}</span>
+            </div>
+            <div class="text-muted" style="font-size: 0.72rem;">{{ act.timestamp|timesince }} ago</div>
+          </div>
+          {% empty %}
+          <div class="text-muted small text-center py-4">No recent activity logged yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // Status Donut Chart
+    const statusCtx = document.getElementById('statusChart');
+    if (statusCtx) {
+      new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['To Do', 'In Progress', 'Completed'],
+          datasets: [{
+            data: [{{ status_counts.To_Do|default:status_counts|dictsort:"0"|first|default:todo_count }}, {{ in_progress_count }}, {{ completed_count }}],
+            backgroundColor: ['#94a3b8', '#3b82f6', '#10b981'],
+            borderWidth: 2,
+            borderColor: '#ffffff',
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15, font: { family: 'Inter' } } }
+          },
+          cutout: '72%'
+        }
+      });
+    }
+
+    // Priority Bar Chart
+    const priorityCtx = document.getElementById('priorityChart');
+    if (priorityCtx) {
+      new Chart(priorityCtx, {
+        type: 'bar',
+        data: {
+          labels: ['High', 'Medium', 'Low'],
+          datasets: [{
+            label: 'Task Count',
+            data: [{{ priority_counts.High }}, {{ priority_counts.Medium }}, {{ priority_counts.Low }}],
+            backgroundColor: ['#ef4444', '#f59e0b', '#64748b'],
+            borderRadius: 6,
+            maxBarThickness: 45
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0, font: { family: 'Inter' } },
+              grid: { color: '#f1f5f9' }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { font: { family: 'Inter' } }
+            }
+          }
+        }
+      });
+    }
+  });
+</script>
+{% endblock %}

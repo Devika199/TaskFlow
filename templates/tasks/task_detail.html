@@ -1,0 +1,328 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ task.title }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb & Action Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1 small">
+        <li class="breadcrumb-item"><a href="{% url 'task_list' %}" class="text-decoration-none">Tasks</a></li>
+        <li class="breadcrumb-item active" aria-current="page">TASK-{{ task.id }}</li>
+      </ol>
+    </nav>
+    <h3 class="fw-bold mb-0 text-dark">{{ task.title }}</h3>
+  </div>
+  <div class="d-flex gap-2">
+    {% if can_edit %}
+    <a href="{% url 'task_edit' task.id %}" class="btn btn-outline-secondary">
+      <i class="bi bi-pencil me-1"></i>Edit Task
+    </a>
+    {% endif %}
+    {% if can_delete %}
+    <a href="{% url 'task_delete' task.id %}" class="btn btn-outline-danger">
+      <i class="bi bi-trash me-1"></i>Delete
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Main Details & Discussion Area -->
+  <div class="col-lg-8">
+    <!-- Task Description Card -->
+    <div class="card-saas mb-4">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-file-text text-primary me-2"></i>Description &amp; Context</span>
+        <div class="d-flex gap-2">
+          <span class="badge badge-priority-{{ task.priority|lower }}">
+            <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }} Priority
+          </span>
+          <span class="badge badge-status-{{ task.status|lower|cut:'_' }}">
+            {{ task.get_status_display }}
+          </span>
+        </div>
+      </div>
+      <div class="card-body p-4">
+        {% if task.description %}
+        <div class="text-secondary" style="line-height: 1.7; white-space: pre-line;">
+          {{ task.description }}
+        </div>
+        {% else %}
+        <div class="text-muted small fst-italic">No detailed description provided for this task.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Discussion & Threaded Comments Card -->
+    <div class="card-saas mb-4">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-chat-left-text text-primary me-2"></i>Discussion ({{ comments|length }})</span>
+        <span class="text-muted small">Collaborative Thread</span>
+      </div>
+      <div class="card-body p-4">
+        <!-- New Comment Form -->
+        <form action="{% url 'add_comment' task.id %}" method="POST" class="mb-4" id="mainCommentForm">
+          {% csrf_token %}
+          <div class="d-flex gap-3">
+            <div class="user-avatar user-avatar-sm flex-shrink-0" style="background-color: {{ user.avatar_color|default:'#4f46e5' }};">
+              {{ user.initials }}
+            </div>
+            <div class="flex-grow-1">
+              <textarea name="content" class="form-control" rows="3" placeholder="Add an update, note, or question..." required></textarea>
+              <div class="mt-2 text-end">
+                <button type="submit" class="btn btn-primary btn-sm px-3">
+                  <i class="bi bi-send-fill me-1"></i>Post Comment
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <hr class="my-4 text-secondary opacity-25">
+
+        <!-- Comment Timeline -->
+        <div class="comment-timeline">
+          {% for comment in comments %}
+          <div class="comment-item" id="comment-{{ comment.id }}">
+            <div class="user-avatar user-avatar-sm flex-shrink-0" style="background-color: {{ comment.author.avatar_color|default:'#4f46e5' }};">
+              {{ comment.author.initials }}
+            </div>
+            <div class="comment-bubble">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-bold small text-dark">{{ comment.author.display_name }}</span>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="text-muted" style="font-size: 0.75rem;">{{ comment.created_at|timesince }} ago</span>
+                  {% if user.is_admin_role or user.id == comment.author.id %}
+                  <form action="{% url 'delete_comment' comment.id %}" method="POST" class="d-inline" onsubmit="return confirm('Delete this comment?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-link text-danger p-0 border-0" title="Delete comment" style="font-size: 0.75rem;">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+                </div>
+              </div>
+              <p class="small text-secondary mb-2" style="white-space: pre-line;">{{ comment.content }}</p>
+
+              <!-- Reply Action Button -->
+              <button class="btn btn-link btn-sm p-0 text-decoration-none small text-primary reply-toggle-btn" type="button" data-bs-toggle="collapse" data-bs-target="#replyBox-{{ comment.id }}">
+                <i class="bi bi-reply-fill me-1"></i>Reply
+              </button>
+
+              <!-- In-place Reply Box -->
+              <div class="collapse mt-2" id="replyBox-{{ comment.id }}">
+                <form action="{% url 'add_comment' task.id %}" method="POST">
+                  {% csrf_token %}
+                  <input type="hidden" name="parent" value="{{ comment.id }}">
+                  <div class="d-flex gap-2">
+                    <input type="text" name="content" class="form-control form-control-sm" placeholder="Write a reply..." required>
+                    <button type="submit" class="btn btn-sm btn-primary">Reply</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Nested Threaded Replies -->
+              {% if comment.replies.all %}
+              <div class="comment-replies">
+                {% for reply in comment.replies.all %}
+                <div class="d-flex gap-2 mb-2" id="comment-{{ reply.id }}">
+                  <div class="user-avatar user-avatar-sm flex-shrink-0" style="background-color: {{ reply.author.avatar_color|default:'#4f46e5' }};">
+                    {{ reply.author.initials }}
+                  </div>
+                  <div class="bg-light p-2 rounded-3 flex-grow-1 border">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <span class="fw-bold small text-dark">{{ reply.author.display_name }}</span>
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="text-muted" style="font-size: 0.72rem;">{{ reply.created_at|timesince }} ago</span>
+                        {% if user.is_admin_role or user.id == reply.author.id %}
+                        <form action="{% url 'delete_comment' reply.id %}" method="POST" class="d-inline" onsubmit="return confirm('Delete this reply?');">
+                          {% csrf_token %}
+                          <button type="submit" class="btn btn-link text-danger p-0 border-0" style="font-size: 0.72rem;">
+                            <i class="bi bi-trash"></i>
+                          </button>
+                        </form>
+                        {% endif %}
+                      </div>
+                    </div>
+                    <p class="small text-secondary mb-0" style="white-space: pre-line;">{{ reply.content }}</p>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% empty %}
+          <div class="p-3 text-center text-muted small">
+            <i class="bi bi-chat-square-dots text-secondary fs-3 d-block mb-1"></i>
+            No comments yet. Start the conversation!
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Activity Logs -->
+    <div class="card-saas">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-clock-history text-primary me-2"></i>Activity History</span>
+      </div>
+      <div class="card-body p-4">
+        <div class="timeline-list">
+          {% for log in activity_logs %}
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="small">
+              <span class="fw-bold text-dark">{{ log.actor.display_name|default:'System' }}</span>
+              <span class="text-secondary">{{ log.details }}</span>
+            </div>
+            <div class="text-muted" style="font-size: 0.72rem;">{{ log.timestamp|date:"M d, Y H:i" }}</div>
+          </div>
+          {% empty %}
+          <div class="text-muted small text-center">No history logs recorded.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar Metadata Panel -->
+  <div class="col-lg-4">
+    <!-- Quick Status Changer Card -->
+    {% if can_edit %}
+    <div class="card-saas mb-4">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-sliders text-primary me-2"></i>Quick Status</span>
+      </div>
+      <div class="card-body p-3">
+        <div class="btn-group w-100" role="group">
+          <button type="button" class="btn btn-sm {% if task.status == 'TODO' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" onclick="quickUpdateStatus('TODO')">
+            To Do
+          </button>
+          <button type="button" class="btn btn-sm {% if task.status == 'IN_PROGRESS' %}btn-primary{% else %}btn-outline-primary{% endif %}" onclick="quickUpdateStatus('IN_PROGRESS')">
+            In Progress
+          </button>
+          <button type="button" class="btn btn-sm {% if task.status == 'COMPLETED' %}btn-success{% else %}btn-outline-success{% endif %}" onclick="quickUpdateStatus('COMPLETED')">
+            Completed
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Task Details Card -->
+    <div class="card-saas mb-4">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-info-circle text-primary me-2"></i>Task Information</span>
+      </div>
+      <div class="card-body p-4">
+        <!-- Assignee -->
+        <div class="mb-3">
+          <label class="text-muted small text-uppercase fw-bold" style="font-size: 0.7rem;">Assignee</label>
+          {% if task.assigned_to %}
+          <div class="d-flex align-items-center gap-2 mt-1">
+            <div class="user-avatar user-avatar-sm" style="background-color: {{ task.assigned_to.avatar_color|default:'#4f46e5' }};">
+              {{ task.assigned_to.initials }}
+            </div>
+            <div>
+              <div class="fw-bold small">{{ task.assigned_to.display_name }}</div>
+              <div class="text-muted" style="font-size: 0.75rem;">{{ task.assigned_to.job_title|default:task.assigned_to.email }}</div>
+            </div>
+          </div>
+          {% else %}
+          <div class="text-muted small mt-1"><i class="bi bi-person-x me-1"></i>Unassigned</div>
+          {% endif %}
+        </div>
+
+        <!-- Created By -->
+        <div class="mb-3">
+          <label class="text-muted small text-uppercase fw-bold" style="font-size: 0.7rem;">Reporter / Author</label>
+          <div class="d-flex align-items-center gap-2 mt-1">
+            <div class="user-avatar user-avatar-sm" style="background-color: {{ task.created_by.avatar_color|default:'#4f46e5' }};">
+              {{ task.created_by.initials|default:'TF' }}
+            </div>
+            <div>
+              <div class="fw-bold small">{{ task.created_by.display_name|default:'System' }}</div>
+              <div class="text-muted" style="font-size: 0.75rem;">{{ task.created_by.email }}</div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="my-3 text-secondary opacity-25">
+
+        <!-- Due Date -->
+        <div class="mb-3">
+          <label class="text-muted small text-uppercase fw-bold" style="font-size: 0.7rem;">Due Date</label>
+          <div class="mt-1">
+            {% if task.due_date %}
+              {% if task.is_overdue %}
+              <div class="badge badge-overdue p-2 d-flex align-items-center gap-2">
+                <i class="bi bi-clock-history fs-6"></i>
+                <div>Overdue: {{ task.due_date|date:"F d, Y" }}</div>
+              </div>
+              {% elif task.due_status == 'today' %}
+              <div class="badge bg-warning-subtle text-warning-emphasis p-2 d-flex align-items-center gap-2">
+                <i class="bi bi-alarm fs-6"></i>
+                <div>Due Today: {{ task.due_date|date:"F d, Y" }}</div>
+              </div>
+              {% else %}
+              <div class="small fw-semibold text-dark"><i class="bi bi-calendar3 me-1"></i>{{ task.due_date|date:"F d, Y" }}</div>
+              {% endif %}
+            {% else %}
+            <div class="text-muted small">No deadline set</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Timestamps -->
+        <div class="small text-muted border-top pt-3">
+          <div class="d-flex justify-content-between mb-1">
+            <span>Created:</span>
+            <span class="text-dark fw-semibold">{{ task.created_at|date:"M d, Y H:i" }}</span>
+          </div>
+          <div class="d-flex justify-content-between mb-1">
+            <span>Last Updated:</span>
+            <span class="text-dark fw-semibold">{{ task.updated_at|date:"M d, Y H:i" }}</span>
+          </div>
+          {% if task.completed_at %}
+          <div class="d-flex justify-content-between text-success">
+            <span>Completed:</span>
+            <span class="fw-semibold">{{ task.completed_at|date:"M d, Y H:i" }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  async function quickUpdateStatus(newStatus) {
+    try {
+      const response = await fetch('/api/v1/tasks/{{ task.id }}/update-status/', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        showToast(data.message, 'success');
+        setTimeout(() => window.location.reload(), 600);
+      } else {
+        showToast(data.detail || 'Failed to update status', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Network error while updating status', 'error');
+    }
+  }
+</script>
+{% endblock %}

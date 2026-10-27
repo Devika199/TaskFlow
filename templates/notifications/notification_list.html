@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Notifications{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h3 class="fw-bold mb-1">In-App Notifications</h3>
+    <p class="text-muted small mb-0">Stay informed on task assignments, comments, and status transitions</p>
+  </div>
+  <div>
+    <form action="{% url 'mark_all_notifications_read' %}" method="POST" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-check2-all me-1"></i>Mark All as Read
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Filter Pills -->
+<div class="d-flex gap-2 mb-3">
+  <a href="{% url 'notification_list' %}" class="btn btn-sm {% if current_filter == 'all' %}btn-primary{% else %}btn-light border{% endif %}">
+    All Notifications
+  </a>
+  <a href="{% url 'notification_list' %}?filter=unread" class="btn btn-sm {% if current_filter == 'unread' %}btn-primary{% else %}btn-light border{% endif %}">
+    Unread Only
+  </a>
+</div>
+
+<div class="card-saas">
+  <div class="list-group list-group-flush">
+    {% for notif in notifications %}
+    <div class="list-group-item p-3 d-flex align-items-center justify-content-between gap-3 {% if not notif.is_read %}bg-light border-start border-primary border-3{% endif %}">
+      <div class="d-flex align-items-center gap-3">
+        <div class="user-avatar user-avatar-sm flex-shrink-0" style="background-color: {{ notif.actor.avatar_color|default:'#4f46e5' }};">
+          {{ notif.actor.initials|default:'TF' }}
+        </div>
+        <div>
+          <div class="small">
+            <strong class="text-dark">{{ notif.actor.display_name|default:'System' }}</strong>
+            <span class="text-secondary">{{ notif.verb }}</span>
+          </div>
+          <div class="text-muted mt-1" style="font-size: 0.72rem;">
+            <i class="bi bi-clock me-1"></i>{{ notif.created_at|timesince }} ago
+            {% if notif.task %}
+            &bull; <a href="{% url 'task_detail' notif.task.id %}" class="text-primary text-decoration-none fw-semibold">View Task #{{ notif.task.id }}</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        {% if not notif.is_read %}
+        <form action="{% url 'mark_notification_read' notif.id %}" method="POST" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-light border py-1 px-2" title="Mark as read">
+            <i class="bi bi-check2 text-primary"></i>
+          </button>
+        </form>
+        {% else %}
+        <span class="badge bg-secondary-subtle text-secondary small">Read</span>
+        {% endif %}
+      </div>
+    </div>
+    {% empty %}
+    <div class="p-5 text-center text-muted">
+      <i class="bi bi-bell-slash fs-2 text-secondary d-block mb-2"></i>
+      <h5>No notifications found</h5>
+      <p class="small text-muted mb-0">You are all caught up with your updates.</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

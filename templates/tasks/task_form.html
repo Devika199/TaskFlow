@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8 col-xl-7">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div>
+        <nav aria-label="breadcrumb">
+          <ol class="breadcrumb mb-1 small">
+            <li class="breadcrumb-item"><a href="{% url 'task_list' %}" class="text-decoration-none">Tasks</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+          </ol>
+        </nav>
+        <h3 class="fw-bold mb-0 text-dark">{{ title }}</h3>
+      </div>
+      <a href="{% if task %}{% url 'task_detail' task.id %}{% else %}{% url 'task_list' %}{% endif %}" class="btn btn-outline-secondary">
+        Cancel
+      </a>
+    </div>
+
+    <div class="card-saas">
+      <div class="card-body p-4">
+        <form method="POST">
+          {% csrf_token %}
+          
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Task Title <span class="text-danger">*</span></label>
+            {{ form.title }}
+            {% if form.title.errors %}<div class="text-danger small mt-1">{{ form.title.errors.0 }}</div>{% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            {{ form.description }}
+            {% if form.description.errors %}<div class="text-danger small mt-1">{{ form.description.errors.0 }}</div>{% endif %}
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Workflow Status</label>
+              {{ form.status }}
+              {% if form.status.errors %}<div class="text-danger small mt-1">{{ form.status.errors.0 }}</div>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Priority Level</label>
+              {{ form.priority }}
+              {% if form.priority.errors %}<div class="text-danger small mt-1">{{ form.priority.errors.0 }}</div>{% endif %}
+            </div>
+          </div>
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Target Due Date</label>
+              {{ form.due_date }}
+              {% if form.due_date.errors %}<div class="text-danger small mt-1">{{ form.due_date.errors.0 }}</div>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Assignee</label>
+              {{ form.assigned_to }}
+              {% if form.assigned_to.errors %}<div class="text-danger small mt-1">{{ form.assigned_to.errors.0 }}</div>{% endif %}
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 pt-3 border-top">
+            <a href="{% if task %}{% url 'task_detail' task.id %}{% else %}{% url 'task_list' %}{% endif %}" class="btn btn-light border">
+              Cancel
+            </a>
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-check-lg me-1"></i>{{ action_label }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

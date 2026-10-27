@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+
+{% block title %}Team Management{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h3 class="fw-bold mb-1">Team Members &amp; Workload</h3>
+    <p class="text-muted small mb-0">Manage roles, access status, and monitor team task allocations</p>
+  </div>
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+    <i class="bi bi-person-plus-fill me-2"></i>Add Member
+  </button>
+</div>
+
+<div class="card-saas">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-4">Team Member</th>
+          <th>Role</th>
+          <th>Department</th>
+          <th>Workload (Active / Total)</th>
+          <th>Completed</th>
+          <th>Status</th>
+          <th class="text-end pe-4">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="ps-4">
+            <div class="d-flex align-items-center gap-3">
+              <div class="user-avatar" style="background-color: {{ u.avatar_color|default:'#4f46e5' }};">
+                {{ u.initials }}
+              </div>
+              <div>
+                <div class="fw-bold text-dark">{{ u.display_name }}</div>
+                <div class="text-muted small">{{ u.email }} &bull; @{{ u.username }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% if u.role == 'ADMIN' %}
+            <span class="badge bg-purple-subtle text-primary border border-primary-subtle px-2 py-1">
+              <i class="bi bi-shield-lock-fill me-1"></i>Admin
+            </span>
+            {% else %}
+            <span class="badge bg-secondary-subtle text-secondary border px-2 py-1">
+              <i class="bi bi-person-fill me-1"></i>Member
+            </span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="small fw-semibold">{{ u.department|default:'—' }}</div>
+            <div class="text-muted small">{{ u.job_title|default:'—' }}</div>
+          </td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="fw-bold text-dark">{{ u.in_progress_tasks|add:u.todo_tasks }} active</span>
+              <span class="text-muted small">/ {{ u.total_tasks }} total</span>
+            </div>
+            <div class="progress mt-1" style="height: 6px; width: 120px;">
+              <div class="progress-bar bg-warning" role="progressbar" style="width: {% if u.total_tasks %}{% widthratio u.todo_tasks u.total_tasks 100 %}{% else %}0{% endif %}%;" title="To Do"></div>
+              <div class="progress-bar bg-primary" role="progressbar" style="width: {% if u.total_tasks %}{% widthratio u.in_progress_tasks u.total_tasks 100 %}{% else %}0{% endif %}%;" title="In Progress"></div>
+              <div class="progress-bar bg-success" role="progressbar" style="width: {% if u.total_tasks %}{% widthratio u.completed_tasks u.total_tasks 100 %}{% else %}0{% endif %}%;" title="Completed"></div>
+            </div>
+          </td>
+          <td>
+            <span class="badge bg-success-subtle text-success px-2 py-1">
+              {{ u.completed_tasks }} done
+            </span>
+          </td>
+          <td>
+            {% if u.is_active %}
+            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle-fill me-1"></i>Active</span>
+            {% else %}
+            <span class="badge bg-danger-subtle text-danger"><i class="bi bi-slash-circle me-1"></i>Inactive</span>
+            {% endif %}
+          </td>
+          <td class="text-end pe-4">
+            {% if u.id != request.user.id %}
+            <form action="{% url 'toggle_user_active' u.id %}" method="POST" class="d-inline">
+              {% csrf_token %}
+              {% if u.is_active %}
+              <button type="submit" class="btn btn-sm btn-outline-danger" title="Deactivate user">
+                <i class="bi bi-person-x"></i> Deactivate
+              </button>
+              {% else %}
+              <button type="submit" class="btn btn-sm btn-outline-success" title="Activate user">
+                <i class="bi bi-person-check"></i> Activate
+              </button>
+              {% endif %}
+            </form>
+            {% else %}
+            <span class="text-muted small fst-italic">Current user</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center py-4 text-muted">No team members registered yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Member Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-labelledby="addUserModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-light">
+        <h5 class="modal-title fw-bold" id="addUserModalLabel"><i class="bi bi-person-plus text-primary me-2"></i>Add Team Member</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST">
+        {% csrf_token %}
+        <div class="modal-body p-4">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Username <span class="text-danger">*</span></label>
+              {{ create_form.username }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Email Address <span class="text-danger">*</span></label>
+              {{ create_form.email }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">First Name</label>
+              {{ create_form.first_name }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Last Name</label>
+              {{ create_form.last_name }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Role</label>
+              {{ create_form.role }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Initial Password <span class="text-danger">*</span></label>
+              {{ create_form.password }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Department</label>
+              {{ create_form.department }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Job Title</label>
+              {{ create_form.job_title }}
+            </div>
+            <div class="col-12 mt-3">
+              <div class="form-check">
+                {{ create_form.is_active }}
+                <label class="form-check-label small fw-semibold" for="{{ create_form.is_active.id_for_label }}">
+                  Active user account (can sign in immediately)
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary px-4">Create Member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

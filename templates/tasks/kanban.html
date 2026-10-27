@@ -1,0 +1,252 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Kanban Board{% endblock %}
+
+{% block content %}
+<!-- Board Header & Filters -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h3 class="fw-bold mb-1">Kanban Workflow Board</h3>
+    <p class="text-muted small mb-0">Drag and drop cards across columns to update workflow progression</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'task_list' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-list-ul me-1"></i>List View
+    </a>
+    {% if user.is_admin_role %}
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#quickNewTaskModal">
+      <i class="bi bi-plus-lg me-1"></i>New Task
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Filter Toolbar -->
+<div class="card-saas p-3 mb-4">
+  <form method="GET" class="row g-2 align-items-center">
+    <div class="col-md-4">
+      <div class="search-input-group">
+        <i class="bi bi-search"></i>
+        <input type="text" name="q" class="form-control" placeholder="Search tasks on board..." value="{{ current_q }}">
+      </div>
+    </div>
+    <div class="col-sm-6 col-md-3">
+      <select name="priority" class="form-select">
+        <option value="">All Priorities</option>
+        <option value="HIGH" {% if current_priority == 'HIGH' %}selected{% endif %}>High Priority</option>
+        <option value="MEDIUM" {% if current_priority == 'MEDIUM' %}selected{% endif %}>Medium Priority</option>
+        <option value="LOW" {% if current_priority == 'LOW' %}selected{% endif %}>Low Priority</option>
+      </select>
+    </div>
+    {% if user.is_admin_role %}
+    <div class="col-sm-6 col-md-3">
+      <select name="assigned_to" class="form-select">
+        <option value="">All Assignees</option>
+        <option value="me" {% if current_assignee == 'me' %}selected{% endif %}>Assigned to Me</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if current_assignee == u.id|stringformat:"s" %}selected{% endif %}>{{ u.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-md-2 d-flex gap-2">
+      <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel-fill me-1"></i>Filter</button>
+      {% if current_q or current_priority or current_assignee %}
+      <a href="{% url 'kanban' %}" class="btn btn-outline-secondary" title="Reset Filters"><i class="bi bi-x-lg"></i></a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<!-- 3-Column Kanban Board -->
+<div class="kanban-board-container">
+  
+  <!-- Column 1: TO DO -->
+  <div class="kanban-column" data-status="TODO">
+    <div class="kanban-column-header">
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge rounded-pill bg-secondary column-count-badge">{{ todo_tasks|length }}</span>
+        <span class="fw-bold text-dark">To Do</span>
+      </div>
+      {% if user.is_admin_role %}
+      <a href="{% url 'task_create' %}?status=TODO" class="btn btn-sm btn-light border text-muted" title="Add task to To Do">
+        <i class="bi bi-plus-lg"></i>
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="kanban-card-list" data-status="TODO">
+      {% for task in todo_tasks %}
+      <div class="kanban-card" data-task-id="{{ task.id }}">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="badge badge-priority-{{ task.priority|lower }}">
+            <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
+          </span>
+          {% if task.is_overdue %}
+          <span class="badge badge-overdue small">Overdue</span>
+          {% elif task.due_status == 'today' %}
+          <span class="badge bg-warning-subtle text-warning small">Today</span>
+          {% endif %}
+        </div>
+
+        <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none d-block mb-1">
+          {{ task.title }}
+        </a>
+        {% if task.description %}
+        <p class="text-muted small mb-3 text-truncate">{{ task.description|truncatechars:80 }}</p>
+        {% endif %}
+
+        <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+          <div class="d-flex align-items-center gap-2">
+            {% if task.assigned_to %}
+            <div class="user-avatar user-avatar-sm" style="background-color: {{ task.assigned_to.avatar_color|default:'#4f46e5' }};" title="{{ task.assigned_to.display_name }}">
+              {{ task.assigned_to.initials }}
+            </div>
+            {% else %}
+            <span class="badge bg-light text-muted border small"><i class="bi bi-person-x me-1"></i>None</span>
+            {% endif %}
+            {% if task.due_date %}
+            <span class="small text-muted" style="font-size: 0.75rem;"><i class="bi bi-calendar3 me-1"></i>{{ task.due_date|date:"M d" }}</span>
+            {% endif %}
+          </div>
+          {% if task.comments.count > 0 %}
+          <span class="small text-muted"><i class="bi bi-chat-dots me-1"></i>{{ task.comments.count }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="kanban-empty-placeholder text-center text-muted py-4 small" style="{% if todo_tasks|length > 0 %}display: none;{% endif %}">
+        <i class="bi bi-inbox fs-3 d-block text-secondary mb-1"></i>
+        No tasks in To Do
+      </div>
+    </div>
+  </div>
+
+  <!-- Column 2: IN PROGRESS -->
+  <div class="kanban-column" data-status="IN_PROGRESS">
+    <div class="kanban-column-header">
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge rounded-pill bg-primary column-count-badge">{{ in_progress_tasks|length }}</span>
+        <span class="fw-bold text-dark">In Progress</span>
+      </div>
+      {% if user.is_admin_role %}
+      <a href="{% url 'task_create' %}?status=IN_PROGRESS" class="btn btn-sm btn-light border text-muted" title="Add task to In Progress">
+        <i class="bi bi-plus-lg"></i>
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="kanban-card-list" data-status="IN_PROGRESS">
+      {% for task in in_progress_tasks %}
+      <div class="kanban-card" data-task-id="{{ task.id }}">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="badge badge-priority-{{ task.priority|lower }}">
+            <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
+          </span>
+          {% if task.is_overdue %}
+          <span class="badge badge-overdue small">Overdue</span>
+          {% elif task.due_status == 'today' %}
+          <span class="badge bg-warning-subtle text-warning small">Today</span>
+          {% endif %}
+        </div>
+
+        <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none d-block mb-1">
+          {{ task.title }}
+        </a>
+        {% if task.description %}
+        <p class="text-muted small mb-3 text-truncate">{{ task.description|truncatechars:80 }}</p>
+        {% endif %}
+
+        <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+          <div class="d-flex align-items-center gap-2">
+            {% if task.assigned_to %}
+            <div class="user-avatar user-avatar-sm" style="background-color: {{ task.assigned_to.avatar_color|default:'#4f46e5' }};" title="{{ task.assigned_to.display_name }}">
+              {{ task.assigned_to.initials }}
+            </div>
+            {% else %}
+            <span class="badge bg-light text-muted border small"><i class="bi bi-person-x me-1"></i>None</span>
+            {% endif %}
+            {% if task.due_date %}
+            <span class="small text-muted" style="font-size: 0.75rem;"><i class="bi bi-calendar3 me-1"></i>{{ task.due_date|date:"M d" }}</span>
+            {% endif %}
+          </div>
+          {% if task.comments.count > 0 %}
+          <span class="small text-muted"><i class="bi bi-chat-dots me-1"></i>{{ task.comments.count }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="kanban-empty-placeholder text-center text-muted py-4 small" style="{% if in_progress_tasks|length > 0 %}display: none;{% endif %}">
+        <i class="bi bi-inbox fs-3 d-block text-secondary mb-1"></i>
+        No tasks in Progress
+      </div>
+    </div>
+  </div>
+
+  <!-- Column 3: COMPLETED -->
+  <div class="kanban-column" data-status="COMPLETED">
+    <div class="kanban-column-header">
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge rounded-pill bg-success column-count-badge">{{ completed_tasks|length }}</span>
+        <span class="fw-bold text-dark">Completed</span>
+      </div>
+      {% if user.is_admin_role %}
+      <a href="{% url 'task_create' %}?status=COMPLETED" class="btn btn-sm btn-light border text-muted" title="Add task to Completed">
+        <i class="bi bi-plus-lg"></i>
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="kanban-card-list" data-status="COMPLETED">
+      {% for task in completed_tasks %}
+      <div class="kanban-card" data-task-id="{{ task.id }}" style="opacity: 0.9;">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="badge badge-priority-{{ task.priority|lower }}">
+            <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
+          </span>
+          <span class="badge badge-status-completed small"><i class="bi bi-check-lg me-1"></i>Done</span>
+        </div>
+
+        <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none d-block mb-1 text-decoration-line-through">
+          {{ task.title }}
+        </a>
+        {% if task.description %}
+        <p class="text-muted small mb-3 text-truncate">{{ task.description|truncatechars:80 }}</p>
+        {% endif %}
+
+        <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+          <div class="d-flex align-items-center gap-2">
+            {% if task.assigned_to %}
+            <div class="user-avatar user-avatar-sm" style="background-color: {{ task.assigned_to.avatar_color|default:'#4f46e5' }};" title="{{ task.assigned_to.display_name }}">
+              {{ task.assigned_to.initials }}
+            </div>
+            {% else %}
+            <span class="badge bg-light text-muted border small">Unassigned</span>
+            {% endif %}
+            {% if task.completed_at %}
+            <span class="small text-success" style="font-size: 0.75rem;"><i class="bi bi-check2-all me-1"></i>{{ task.completed_at|date:"M d" }}</span>
+            {% endif %}
+          </div>
+          {% if task.comments.count > 0 %}
+          <span class="small text-muted"><i class="bi bi-chat-dots me-1"></i>{{ task.comments.count }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="kanban-empty-placeholder text-center text-muted py-4 small" style="{% if completed_tasks|length > 0 %}display: none;{% endif %}">
+        <i class="bi bi-inbox fs-3 d-block text-secondary mb-1"></i>
+        No tasks completed yet
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/kanban.js' %}"></script>
+{% endblock %}

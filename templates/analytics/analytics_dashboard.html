@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+
+{% block title %}Analytics & Workload{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h3 class="fw-bold mb-1">Analytics &amp; Team Workload</h3>
+    <p class="text-muted small mb-0">Sprint completion velocity, bottleneck analysis, and member capacity distribution</p>
+  </div>
+  <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+<!-- Metrics Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">Total Project Tasks</div>
+        <div class="kpi-value">{{ total_tasks }}</div>
+        <div class="small text-muted mt-1"><span class="text-success fw-bold">{{ completed_tasks }}</span> closed</div>
+      </div>
+      <div class="kpi-icon-wrapper bg-primary-subtle text-primary">
+        <i class="bi bi-kanban"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">Active In-Flight</div>
+        <div class="kpi-value text-primary">{{ in_progress_tasks }}</div>
+        <div class="small text-muted mt-1">{{ todo_tasks }} backlog items</div>
+      </div>
+      <div class="kpi-icon-wrapper bg-info-subtle text-info">
+        <i class="bi bi-clock-history"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">Overdue Bottlenecks</div>
+        <div class="kpi-value {% if overdue_tasks > 0 %}text-danger{% else %}text-muted{% endif %}">{{ overdue_tasks }}</div>
+        <div class="small text-muted mt-1">{% if overdue_tasks > 0 %}Action required{% else %}Zero overdue{% endif %}</div>
+      </div>
+      <div class="kpi-icon-wrapper bg-danger-subtle text-danger">
+        <i class="bi bi-exclamation-triangle"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-title">Team Velocity Rate</div>
+        <div class="kpi-value text-success">{{ completion_rate }}%</div>
+        <div class="small text-muted mt-1">Completion ratio</div>
+      </div>
+      <div class="kpi-icon-wrapper bg-success-subtle text-success">
+        <i class="bi bi-lightning-charge"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts Section -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <div class="card-saas h-100">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-pie-chart text-primary me-2"></i>Status Distribution</span>
+      </div>
+      <div class="card-body p-4 d-flex justify-content-center">
+        <div style="position: relative; width: 100%; max-height: 260px;">
+          <canvas id="analyticsStatusChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card-saas h-100">
+      <div class="card-header">
+        <span class="fw-bold"><i class="bi bi-bar-chart text-primary me-2"></i>Priority Distribution</span>
+      </div>
+      <div class="card-body p-4">
+        <div style="position: relative; width: 100%; max-height: 260px;">
+          <canvas id="analyticsPriorityChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Team Workload Distribution Table -->
+<div class="card-saas mb-4">
+  <div class="card-header">
+    <span class="fw-bold"><i class="bi bi-person-lines-fill text-primary me-2"></i>Member Workload &amp; Capacity Matrix</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small">
+        <tr>
+          <th class="ps-4">Member</th>
+          <th>Department</th>
+          <th>Total Assigned</th>
+          <th>To Do</th>
+          <th>In Progress</th>
+          <th>Completed</th>
+          <th>Overdue</th>
+          <th>Completion %</th>
+          <th class="text-end pe-4">Workload Bar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in user_workloads %}
+        <tr>
+          <td class="ps-4">
+            <div class="d-flex align-items-center gap-2">
+              <div class="user-avatar user-avatar-sm" style="background-color: {{ u.avatar_color|default:'#4f46e5' }};">
+                {{ u.initials }}
+              </div>
+              <div>
+                <div class="fw-bold small">{{ u.display_name }}</div>
+                <div class="text-muted" style="font-size: 0.72rem;">@{{ u.username }}</div>
+              </div>
+            </div>
+          </td>
+          <td class="small text-muted">{{ u.department|default:'—' }}</td>
+          <td class="fw-bold">{{ u.total_assigned }}</td>
+          <td><span class="badge bg-secondary-subtle text-secondary">{{ u.todo }}</span></td>
+          <td><span class="badge bg-primary-subtle text-primary">{{ u.in_progress }}</span></td>
+          <td><span class="badge bg-success-subtle text-success">{{ u.completed }}</span></td>
+          <td>
+            {% if u.overdue > 0 %}
+            <span class="badge bg-danger-subtle text-danger">{{ u.overdue }}</span>
+            {% else %}
+            <span class="text-muted small">0</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="fw-bold text-dark">
+              {% if u.total_assigned > 0 %}
+                {% widthratio u.completed u.total_assigned 100 %}%
+              {% else %}
+                0%
+              {% endif %}
+            </span>
+          </td>
+          <td class="text-end pe-4" style="min-width: 140px;">
+            <div class="progress" style="height: 8px;">
+              <div class="progress-bar bg-warning" role="progressbar" style="width: {% if u.total_assigned %}{% widthratio u.todo u.total_assigned 100 %}{% else %}0{% endif %}%;" title="To Do"></div>
+              <div class="progress-bar bg-primary" role="progressbar" style="width: {% if u.total_assigned %}{% widthratio u.in_progress u.total_assigned 100 %}{% else %}0{% endif %}%;" title="In Progress"></div>
+              <div class="progress-bar bg-success" role="progressbar" style="width: {% if u.total_assigned %}{% widthratio u.completed u.total_assigned 100 %}{% else %}0{% endif %}%;" title="Completed"></div>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center py-4 text-muted">No member workloads available.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // Status Donut Chart
+    const statusCtx = document.getElementById('analyticsStatusChart');
+    if (statusCtx) {
+      new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['To Do', 'In Progress', 'Completed'],
+          datasets: [{
+            data: [{{ status_distribution.To_Do|default:todo_tasks }}, {{ in_progress_tasks }}, {{ completed_tasks }}],
+            backgroundColor: ['#94a3b8', '#3b82f6', '#10b981'],
+            borderWidth: 2,
+            borderColor: '#ffffff',
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15, font: { family: 'Inter' } } }
+          },
+          cutout: '70%'
+        }
+      });
+    }
+
+    // Priority Bar Chart
+    const priorityCtx = document.getElementById('analyticsPriorityChart');
+    if (priorityCtx) {
+      new Chart(priorityCtx, {
+        type: 'bar',
+        data: {
+          labels: ['High', 'Medium', 'Low'],
+          datasets: [{
+            label: 'Task Count',
+            data: [{{ priority_distribution.High }}, {{ priority_distribution.Medium }}, {{ priority_distribution.Low }}],
+            backgroundColor: ['#ef4444', '#f59e0b', '#64748b'],
+            borderRadius: 6,
+            maxBarThickness: 45
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0, font: { family: 'Inter' } },
+              grid: { color: '#f1f5f9' }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { font: { family: 'Inter' } }
+            }
+          }
+        }
+      });
+    }
+  });
+</script>
+{% endblock %}
