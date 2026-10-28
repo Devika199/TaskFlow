@@ -1,4 +1,0 @@
-TaskFlow: Django 5.2 + DRF, custom User model (accounts.User), roles ADMIN and MEMBER.
-Never rewrite or restructure existing code. Never reset the database or delete migrations.
-All permissions must be enforced server-side. Run python manage.py check and test after changes.
-Do not claim anything works unless you ran it and saw the output.
