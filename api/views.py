@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import exceptions, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -8,12 +9,36 @@ from rest_framework.views import APIView
 
 from notifications.models import Notification
 from notifications.services import create_notification
-from tasks.models import Task, TaskActivityLog, TaskComment
+from tasks.models import (
+    Label, Project, Task, TaskActivityLog, TaskChecklistItem, TaskComment,
+)
 from .serializers import (NotificationSerializer, TaskCommentSerializer,
-                          TaskSerializer, TaskStatusUpdateSerializer,
-                          UserSummarySerializer)
+                          LabelSerializer, ProjectSerializer, TaskSerializer,
+                          TaskChecklistItemSerializer,
+                          TaskChecklistItemStatusSerializer,
+                          TaskStatusUpdateSerializer, UserSummarySerializer)
 
 User = get_user_model()
+
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and (request.method in permissions.SAFE_METHODS or request.user.is_admin_role)
+        )
+
+
+class ChecklistItemPermission(IsAdminOrReadOnly):
+    def has_permission(self, request, view):
+        if (
+            request.user
+            and request.user.is_authenticated
+            and request.method in ('POST', 'PUT', 'PATCH')
+        ):
+            return True
+        return super().has_permission(request, view)
 
 
 class CurrentUserAPIView(APIView):
@@ -29,7 +54,9 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        qs = Task.objects.select_related('created_by', 'assigned_to').prefetch_related('comments')
+        qs = Task.objects.select_related(
+            'created_by', 'assigned_to', 'project'
+        ).prefetch_related('comments', 'labels', 'checklist_items')
         today = timezone.now().date()
 
         # Strict RBAC: Members can ONLY access tasks assigned to them
@@ -100,7 +127,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         changes = []
         if old_status != updated_task.status:
             changes.append(f"Status changed from {old_status} to {updated_task.status}")
-            if updated_task.assigned_to:
+            if updated_task.assigned_to and old_assignee == updated_task.assigned_to:
                 create_notification(
                     recipient=updated_task.assigned_to,
                     actor=self.request.user,
@@ -179,6 +206,81 @@ class TaskViewSet(viewsets.ModelViewSet):
         })
 
 
+class ProjectViewSet(viewsets.ModelViewSet):
+    serializer_class = ProjectSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        queryset = Project.objects.all()
+        if not self.request.user.is_admin_role:
+            queryset = queryset.filter(tasks__assigned_to=self.request.user).distinct()
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        project = self.get_object()
+        project.archived = not project.archived
+        project.save(update_fields=['archived', 'updated_at'])
+        return Response(self.get_serializer(project).data)
+
+
+class LabelViewSet(viewsets.ModelViewSet):
+    serializer_class = LabelSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    queryset = Label.objects.all()
+
+
+class TaskChecklistItemViewSet(viewsets.ModelViewSet):
+    serializer_class = TaskChecklistItemSerializer
+    permission_classes = [ChecklistItemPermission]
+
+    def get_queryset(self):
+        queryset = TaskChecklistItem.objects.select_related('task')
+        if not self.request.user.is_admin_role:
+            queryset = queryset.filter(task__assigned_to=self.request.user)
+
+        task_id = self.request.query_params.get('task')
+        if task_id:
+            task_queryset = Task.objects.all()
+            if not self.request.user.is_admin_role:
+                task_queryset = task_queryset.filter(assigned_to=self.request.user)
+            get_object_or_404(task_queryset, pk=task_id)
+            queryset = queryset.filter(task_id=task_id)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        if not request.user.is_admin_role:
+            task_id = request.data.get('task')
+            if not task_id:
+                raise exceptions.ValidationError({'task': 'This field is required.'})
+            tasks = Task.objects.filter(assigned_to=request.user)
+            get_object_or_404(tasks, pk=task_id)
+            raise exceptions.PermissionDenied('Members cannot create checklist items.')
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if request.user.is_admin_role:
+            return super().update(request, *args, **kwargs)
+
+        instance = self.get_object()
+        if not request.data or set(request.data) != {'is_completed'}:
+            raise exceptions.PermissionDenied(
+                'Members may update only the checklist completion state.'
+            )
+        serializer = TaskChecklistItemStatusSerializer(
+            instance,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(self.get_serializer(instance).data)
+
+
 class TaskCommentViewSet(viewsets.ModelViewSet):
     serializer_class = TaskCommentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -194,11 +296,22 @@ class TaskCommentViewSet(viewsets.ModelViewSet):
             qs = qs.filter(task_id=task_id)
         return qs
 
+    def create(self, request, *args, **kwargs):
+        if not request.user.is_admin_role:
+            task_id = request.data.get('task')
+            if not task_id:
+                raise exceptions.NotFound("Task not found.")
+            get_object_or_404(
+                Task.objects.filter(assigned_to=request.user),
+                pk=task_id,
+            )
+        return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         task = serializer.validated_data['task']
         # Strict RBAC: Member can only comment on tasks assigned to them
         if not task.can_comment(self.request.user):
-            raise exceptions.PermissionDenied("You are not authorized to comment on this task.")
+            raise exceptions.NotFound("Task not found.")
 
         comment = serializer.save(author=self.request.user)
 
@@ -218,6 +331,17 @@ class TaskCommentViewSet(viewsets.ModelViewSet):
                 task=task,
                 notification_type=Notification.TYPE_COMMENT
             )
+
+    def perform_update(self, serializer):
+        comment = self.get_object()
+        if not comment.can_delete(self.request.user):
+            raise exceptions.PermissionDenied("You cannot edit this comment.")
+        task = serializer.validated_data.get('task', comment.task)
+        if task.pk != comment.task_id:
+            raise exceptions.ValidationError("Comments cannot be moved to another task.")
+        if not task.can_comment(self.request.user):
+            raise exceptions.PermissionDenied("You are not authorized to comment on this task.")
+        serializer.save()
 
     def perform_destroy(self, instance):
         if not instance.can_delete(self.request.user):
@@ -271,11 +395,13 @@ class AnalyticsOverviewAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        if not request.user.is_admin_role:
+            raise exceptions.PermissionDenied(
+                "Administrator privileges are required to view analytics."
+            )
+
         today = timezone.now().date()
-        if request.user.is_admin_role:
-            tasks = Task.objects.all()
-        else:
-            tasks = Task.objects.filter(assigned_to=request.user)
+        tasks = Task.objects.all()
 
         total = tasks.count()
         completed = tasks.filter(status=Task.STATUS_COMPLETED).count()

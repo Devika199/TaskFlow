@@ -56,6 +56,58 @@
       </div>
     </div>
 
+    <div class="card-saas mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-list-check text-primary me-2"></i>Checklist</span>
+        <span class="small text-muted">{{ task.checklist_completed }} of {{ task.checklist_total }} complete</span>
+      </div>
+      <div class="card-body p-4">
+        {% if task.checklist_total %}
+        <div class="progress mb-3" role="progressbar" aria-label="Checklist progress"
+             aria-valuenow="{{ task.checklist_progress }}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar bg-primary" style="width: {{ task.checklist_progress }}%"></div>
+        </div>
+        <ul class="list-unstyled mb-0 checklist-items">
+          {% for item in task.checklist_items.all %}
+          <li class="d-flex align-items-center gap-2 py-2 border-bottom">
+            <form method="post" action="{% url 'checklist_toggle' task.id item.id %}" class="m-0">
+              {% csrf_token %}
+              <button type="submit" class="checklist-check {% if item.is_completed %}is-complete{% endif %}"
+                      aria-label="{% if item.is_completed %}Mark {{ item.title }} incomplete{% else %}Mark {{ item.title }} complete{% endif %}">
+                {% if item.is_completed %}<i class="bi bi-check-lg" aria-hidden="true"></i>{% endif %}
+              </button>
+            </form>
+            <span class="flex-grow-1 {% if item.is_completed %}text-decoration-line-through text-muted{% endif %}">{{ item.title }}</span>
+            {% if can_edit %}
+            <div class="d-flex align-items-center gap-1">
+              <form method="post" action="{% url 'checklist_reorder' task.id item.id %}" class="m-0">
+                {% csrf_token %}<input type="hidden" name="direction" value="up">
+                <button type="submit" class="btn btn-sm btn-light border" aria-label="Move {{ item.title }} up"><i class="bi bi-arrow-up"></i></button>
+              </form>
+              <form method="post" action="{% url 'checklist_reorder' task.id item.id %}" class="m-0">
+                {% csrf_token %}<input type="hidden" name="direction" value="down">
+                <button type="submit" class="btn btn-sm btn-light border" aria-label="Move {{ item.title }} down"><i class="bi bi-arrow-down"></i></button>
+              </form>
+              <a class="btn btn-sm btn-light border" href="{% url 'checklist_edit' task.id item.id %}" aria-label="Edit {{ item.title }}"><i class="bi bi-pencil"></i></a>
+              <form method="post" action="{% url 'checklist_delete' task.id item.id %}" class="m-0" onsubmit="return confirm('Delete this checklist item?');">
+                {% csrf_token %}<button type="submit" class="btn btn-sm btn-light border text-danger" aria-label="Delete {{ item.title }}"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted small mb-0">No checklist items yet.</p>
+        {% endif %}
+        {% if can_edit %}
+        <a href="{% url 'checklist_add' task.id %}" class="btn btn-sm btn-outline-primary mt-3">
+          <i class="bi bi-plus-lg me-1"></i>Add checklist item
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Discussion & Threaded Comments Card -->
     <div class="card-saas mb-4">
       <div class="card-header">
@@ -219,6 +271,23 @@
         <span class="fw-bold"><i class="bi bi-info-circle text-primary me-2"></i>Task Information</span>
       </div>
       <div class="card-body p-4">
+        <div class="mb-3">
+          <label class="text-muted small text-uppercase fw-bold" style="font-size: 0.7rem;">Project</label>
+          {% if task.project %}
+          <div class="mt-1"><span class="badge bg-primary-subtle text-primary-emphasis">{{ task.project.name }}</span>{% if task.project.archived %}<span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">Archived</span>{% endif %}</div>
+          {% else %}
+          <div class="text-muted small mt-1">No project</div>
+          {% endif %}
+        </div>
+        <div class="mb-3">
+          <label class="text-muted small text-uppercase fw-bold" style="font-size: 0.7rem;">Labels</label>
+          <div class="d-flex flex-wrap gap-1 mt-1">
+            {% for label in task.labels.all %}
+            <span class="badge border" style="background-color: {{ label.color }}; color: #fff;">{{ label.name }}</span>
+            {% empty %}<span class="text-muted small">No labels</span>{% endfor %}
+          </div>
+        </div>
+        <hr class="my-3 text-secondary opacity-25">
         <!-- Assignee -->
         <div class="mb-3">
           <label class="text-muted small text-uppercase fw-bold" style="font-size: 0.7rem;">Assignee</label>

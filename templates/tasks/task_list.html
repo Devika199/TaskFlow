@@ -10,10 +10,16 @@
     <p class="text-muted small mb-0">Search, filter, and organize team task deliveries</p>
   </div>
   <div class="d-flex gap-2">
+    <a href="{% url 'task_calendar' %}" class="btn btn-outline-secondary">
+      <i class="bi bi-calendar3 me-1"></i>Calendar
+    </a>
     <a href="{% url 'kanban' %}" class="btn btn-outline-secondary">
       <i class="bi bi-layout-three-columns me-1"></i>Kanban View
     </a>
     {% if user.is_admin_role %}
+    <a href="{% url 'task_csv_export' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-outline-primary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#quickNewTaskModal">
       <i class="bi bi-plus-lg me-1"></i>New Task
     </button>
@@ -58,6 +64,22 @@
       </select>
     </div>
     <div class="col-sm-6 col-lg-2">
+      <select name="project" class="form-select" aria-label="Filter by project">
+        <option value="">All Projects</option>
+        {% for project in projects %}
+        <option value="{{ project.id }}" {% if current_project == project.id|stringformat:"s" %}selected{% endif %}>{{ project.name }}{% if project.archived %} (Archived){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+      <select name="label" class="form-select" aria-label="Filter by label">
+        <option value="">All Labels</option>
+        {% for label in labels %}
+        <option value="{{ label.id }}" {% if current_label == label.id|stringformat:"s" %}selected{% endif %}>{{ label.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-sm-6 col-lg-2">
       <select name="priority" class="form-select">
         <option value="">All Priorities</option>
         <option value="HIGH" {% if current_priority == 'HIGH' %}selected{% endif %}>High Priority</option>
@@ -87,7 +109,7 @@
     </div>
     <div class="col-lg-1 d-flex gap-1">
       <button type="submit" class="btn btn-primary w-100" title="Apply Filter"><i class="bi bi-funnel-fill"></i></button>
-      {% if current_q or current_status or current_priority or current_assignee or current_overdue %}
+      {% if current_q or current_status or current_priority or current_assignee or current_project or current_label or current_overdue %}
       <a href="{% url 'task_list' %}" class="btn btn-outline-secondary" title="Reset Filters"><i class="bi bi-x-lg"></i></a>
       {% endif %}
     </div>
@@ -118,6 +140,16 @@
                 <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none {% if task.status == 'COMPLETED' %}text-decoration-line-through text-muted{% endif %}">
                   {{ task.title }}
                 </a>
+                <div class="d-flex flex-wrap gap-1 mt-1">
+                  {% if task.project %}<span class="badge bg-primary-subtle text-primary-emphasis">{{ task.project.name }}</span>{% endif %}
+                  {% for label in task.labels.all %}<span class="badge border" style="background-color: {{ label.color }}; color: #fff;">{{ label.name }}</span>{% endfor %}
+                </div>
+                {% if task.checklist_total %}
+                <div class="task-checklist-progress mt-2" aria-label="Checklist progress: {{ task.checklist_completed }} of {{ task.checklist_total }} complete">
+                  <div class="progress"><div class="progress-bar bg-primary" style="width: {{ task.checklist_progress }}%"></div></div>
+                  <span>{{ task.checklist_completed }}/{{ task.checklist_total }}</span>
+                </div>
+                {% endif %}
                 {% if task.description %}
                 <div class="text-muted small text-truncate" style="max-width: 360px;">
                   {{ task.description|truncatechars:75 }}
@@ -127,7 +159,8 @@
             </div>
           </td>
           <td>
-            <span class="badge badge-status-{{ task.status|lower|cut:'_' }}">
+            <span class="badge badge-status-{{ task.status|lower|cut:'_' }}"
+      {% if task.status == 'IN_PROGRESS' %}style="background-color:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;"{% endif %}>
               {{ task.get_status_display }}
             </span>
           </td>

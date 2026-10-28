@@ -1,20 +1,94 @@
+import calendar
+import csv
+import io
 import json
-from datetime import date
+from datetime import date, datetime, timedelta
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
-from django.http import JsonResponse, Http404
-from django.shortcuts import get_object_or_404, redirect, render
+from django.http import HttpResponse, JsonResponse, Http404
+from django.shortcuts import get_object_or_404, redirect, render, reverse
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from notifications.models import Notification
 from notifications.services import create_notification
-from .forms import TaskCommentForm, TaskForm
-from .models import Task, TaskActivityLog, TaskComment
+from .forms import (
+    LabelForm,
+    ProjectForm,
+    TaskChecklistItemForm,
+    TaskCommentForm,
+    TaskForm,
+)
+from .models import Label, Project, Task, TaskActivityLog, TaskChecklistItem, TaskComment
 
 User = get_user_model()
+
+TASK_SORTS = [
+    'due_date', '-due_date', 'priority', '-priority', 'title', '-title',
+    'created_at', '-created_at',
+]
+
+
+def _visible_tasks_for_user(user):
+    tasks = Task.objects.select_related(
+        'assigned_to', 'created_by', 'project'
+    ).prefetch_related('comments', 'labels', 'checklist_items')
+    if not user.is_admin_role:
+        tasks = tasks.filter(assigned_to=user)
+    return tasks
+
+
+def _filtered_task_queryset(request):
+    today = timezone.localdate()
+    tasks = _visible_tasks_for_user(request.user)
+    q = request.GET.get('q', '').strip()
+    if q:
+        tasks = tasks.filter(Q(title__icontains=q) | Q(description__icontains=q))
+
+    status = request.GET.get('status', '').strip()
+    if status in dict(Task.STATUS_CHOICES):
+        tasks = tasks.filter(status=status)
+
+    priority = request.GET.get('priority', '').strip()
+    if priority in dict(Task.PRIORITY_CHOICES):
+        tasks = tasks.filter(priority=priority)
+
+    project_id = request.GET.get('project', '').strip()
+    if project_id.isdigit():
+        tasks = tasks.filter(project_id=int(project_id))
+
+    label_id = request.GET.get('label', '').strip()
+    if label_id.isdigit():
+        tasks = tasks.filter(labels__id=int(label_id))
+
+    assignee = request.GET.get('assigned_to', '').strip()
+    if request.user.is_admin_role:
+        if assignee == 'me':
+            tasks = tasks.filter(assigned_to=request.user)
+        elif assignee == 'unassigned':
+            tasks = tasks.filter(assigned_to__isnull=True)
+        elif assignee.isdigit():
+            tasks = tasks.filter(assigned_to_id=int(assignee))
+
+    overdue = request.GET.get('overdue', '').strip().lower()
+    if overdue in {'1', 'true'}:
+        tasks = tasks.filter(due_date__lt=today).exclude(status=Task.STATUS_COMPLETED)
+
+    sort = request.GET.get('sort', '-created_at')
+    if sort in TASK_SORTS:
+        tasks = tasks.order_by(sort)
+    return tasks
+
+
+def landing_view(request):
+    """Public marketing page. Authenticated visitors go to the workspace dashboard."""
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    return render(request, 'tasks/landing.html')
 
 
 @login_required
@@ -115,52 +189,25 @@ def dashboard_view(request):
 @login_required
 def task_list_view(request):
     today = timezone.now().date()
-
-    # Strict RBAC: Members can ONLY view tasks assigned to them
-    if request.user.is_admin_role:
-        tasks = Task.objects.select_related('assigned_to', 'created_by').prefetch_related('comments')
-    else:
-        tasks = Task.objects.filter(assigned_to=request.user).select_related('assigned_to', 'created_by').prefetch_related('comments')
-
-    # Search query
     q = request.GET.get('q', '').strip()
-    if q:
-        tasks = tasks.filter(Q(title__icontains=q) | Q(description__icontains=q))
-
-    # Status filter
     status = request.GET.get('status', '').strip()
-    if status in dict(Task.STATUS_CHOICES):
-        tasks = tasks.filter(status=status)
-
-    # Priority filter
     priority = request.GET.get('priority', '').strip()
-    if priority in dict(Task.PRIORITY_CHOICES):
-        tasks = tasks.filter(priority=priority)
-
-    # Assignee filter (Admin only can filter by other assignees)
+    project_id = request.GET.get('project', '').strip()
+    label_id = request.GET.get('label', '').strip()
     assignee = request.GET.get('assigned_to', '').strip()
-    if request.user.is_admin_role:
-        if assignee == 'me':
-            tasks = tasks.filter(assigned_to=request.user)
-        elif assignee == 'unassigned':
-            tasks = tasks.filter(assigned_to__isnull=True)
-        elif assignee.isdigit():
-            tasks = tasks.filter(assigned_to_id=int(assignee))
-    else:
+    if not request.user.is_admin_role:
         assignee = 'me'
-
-    # Overdue filter
     overdue = request.GET.get('overdue', '').strip()
-    if overdue == '1' or overdue == 'true':
-        tasks = tasks.filter(due_date__lt=today).exclude(status=Task.STATUS_COMPLETED)
-
-    # Ordering
     sort = request.GET.get('sort', '-created_at')
-    valid_sorts = ['due_date', '-due_date', 'priority', '-priority', 'title', '-title', 'created_at', '-created_at']
-    if sort in valid_sorts:
-        tasks = tasks.order_by(sort)
+    tasks = _filtered_task_queryset(request)
 
     users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+    if request.user.is_admin_role:
+        projects = Project.objects.all()
+    else:
+        projects = Project.objects.filter(tasks__assigned_to=request.user).distinct()
+    projects = projects.order_by('name')
+    labels = Label.objects.all()
 
     # Scoped metric counts for top pills
     if request.user.is_admin_role:
@@ -178,6 +225,10 @@ def task_list_view(request):
         'current_q': q,
         'current_status': status,
         'current_priority': priority,
+        'current_project': project_id,
+        'current_label': label_id,
+        'projects': projects,
+        'labels': labels,
         'current_assignee': assignee,
         'current_overdue': overdue,
         'current_sort': sort,
@@ -189,12 +240,128 @@ def task_list_view(request):
 
 
 @login_required
+def task_calendar_view(request):
+    month_value = request.GET.get('month', '')
+    try:
+        selected_month = datetime.strptime(month_value, '%Y-%m').date().replace(day=1) if month_value else timezone.localdate().replace(day=1)
+    except ValueError:
+        selected_month = timezone.localdate().replace(day=1)
+
+    month_start = selected_month
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    previous_month = (month_start - timedelta(days=1)).replace(day=1)
+    month_end = next_month - timezone.timedelta(days=1)
+
+    tasks = _visible_tasks_for_user(request.user).filter(
+        due_date__gte=month_start,
+        due_date__lte=month_end,
+    )
+    assignee = request.GET.get('assigned_to', '').strip()
+    if request.user.is_admin_role:
+        if assignee == 'me':
+            tasks = tasks.filter(assigned_to=request.user)
+        elif assignee == 'unassigned':
+            tasks = tasks.filter(assigned_to__isnull=True)
+        elif assignee.isdigit():
+            tasks = tasks.filter(assigned_to_id=int(assignee))
+    else:
+        assignee = 'me'
+
+    tasks_by_day = {}
+    for task in tasks.order_by('due_date', 'priority', 'title'):
+        tasks_by_day.setdefault(task.due_date, []).append(task)
+
+    weeks = []
+    for week in calendar.Calendar(firstweekday=0).monthdatescalendar(
+        selected_month.year,
+        selected_month.month,
+    ):
+        weeks.append([
+            {
+                'date': day,
+                'in_month': day.month == selected_month.month,
+                'is_today': day == timezone.localdate(),
+                'tasks': tasks_by_day.get(day, []),
+            }
+            for day in week
+        ])
+
+    users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+    return render(request, 'tasks/calendar.html', {
+        'weeks': weeks,
+        'weekdays': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        'month_title': selected_month.strftime('%B %Y'),
+        'current_month': selected_month.strftime('%Y-%m'),
+        'previous_month': previous_month.strftime('%Y-%m'),
+        'next_month': next_month.strftime('%Y-%m'),
+        'current_assignee': assignee,
+        'users': users,
+    })
+
+
+@login_required
+def task_palette_search_view(request):
+    query = request.GET.get('q', '').strip()[:100]
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    tasks = _visible_tasks_for_user(request.user).filter(
+        Q(title__icontains=query) | Q(description__icontains=query)
+    ).order_by('-updated_at')[:10]
+    return JsonResponse({
+        'results': [
+            {
+                'id': task.pk,
+                'title': task.title,
+                'status': task.get_status_display(),
+                'priority': task.get_priority_display(),
+                'url': reverse('task_detail', args=[task.pk]),
+            }
+            for task in tasks
+        ],
+    })
+
+
+@login_required
+def task_csv_export_view(request):
+    if not request.user.is_admin_role:
+        raise PermissionDenied("Only administrators may export the task list.")
+
+    output = io.StringIO(newline='')
+    writer = csv.writer(output)
+    writer.writerow(['Task', 'Description', 'Status', 'Priority', 'Due date', 'Assignee', 'Project', 'Labels'])
+    for task in _filtered_task_queryset(request):
+        row = [
+            task.title,
+            task.description,
+            task.get_status_display(),
+            task.get_priority_display(),
+            task.due_date.isoformat() if task.due_date else '',
+            task.assigned_to.username if task.assigned_to else '',
+            task.project.name if task.project else '',
+            ', '.join(label.name for label in task.labels.all()),
+        ]
+        writer.writerow([
+            "'" + value if isinstance(value, str) and value.startswith(('=', '+', '-', '@')) else value
+            for value in row
+        ])
+
+    response = HttpResponse(output.getvalue(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="taskflow-tasks-{timezone.localdate().isoformat()}.csv"'
+    return response
+
+
+@login_required
 def kanban_view(request):
     # Strict RBAC: Members see only their assigned tasks on Kanban board
     if request.user.is_admin_role:
-        tasks = Task.objects.select_related('assigned_to', 'created_by').prefetch_related('comments')
+        tasks = Task.objects.select_related(
+            'assigned_to', 'created_by', 'project'
+        ).prefetch_related('comments', 'labels', 'checklist_items')
     else:
-        tasks = Task.objects.filter(assigned_to=request.user).select_related('assigned_to', 'created_by').prefetch_related('comments')
+        tasks = Task.objects.filter(assigned_to=request.user).select_related(
+            'assigned_to', 'created_by', 'project'
+        ).prefetch_related('comments', 'labels', 'checklist_items')
 
     q = request.GET.get('q', '').strip()
     if q:
@@ -203,6 +370,14 @@ def kanban_view(request):
     priority = request.GET.get('priority', '').strip()
     if priority in dict(Task.PRIORITY_CHOICES):
         tasks = tasks.filter(priority=priority)
+
+    project_id = request.GET.get('project', '').strip()
+    if project_id.isdigit():
+        tasks = tasks.filter(project_id=int(project_id))
+
+    label_id = request.GET.get('label', '').strip()
+    if label_id.isdigit():
+        tasks = tasks.filter(labels__id=int(label_id))
 
     assignee = request.GET.get('assigned_to', '').strip()
     if request.user.is_admin_role:
@@ -218,6 +393,12 @@ def kanban_view(request):
     completed_tasks = [t for t in tasks if t.status == Task.STATUS_COMPLETED]
 
     users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+    if request.user.is_admin_role:
+        projects = Project.objects.all()
+    else:
+        projects = Project.objects.filter(tasks__assigned_to=request.user).distinct()
+    projects = projects.order_by('name')
+    labels = Label.objects.all()
 
     context = {
         'todo_tasks': todo_tasks,
@@ -226,6 +407,10 @@ def kanban_view(request):
         'users': users,
         'current_q': q,
         'current_priority': priority,
+        'current_project': project_id,
+        'current_label': label_id,
+        'projects': projects,
+        'labels': labels,
         'current_assignee': assignee,
     }
     return render(request, 'tasks/kanban.html', context)
@@ -233,14 +418,12 @@ def kanban_view(request):
 
 @login_required
 def task_detail_view(request, pk):
-    task = get_object_or_404(
-        Task.objects.select_related('created_by', 'assigned_to'),
-        pk=pk
-    )
-
-    # Strict RBAC: Member can ONLY view their assigned task
-    if not task.can_view(request.user):
-        raise PermissionDenied("You are not authorized to view this task.")
+    tasks = Task.objects.select_related(
+        'created_by', 'assigned_to', 'project'
+    ).prefetch_related('labels', 'checklist_items')
+    if not request.user.is_admin_role:
+        tasks = tasks.filter(assigned_to=request.user)
+    task = get_object_or_404(tasks, pk=pk)
 
     comments = task.comments.filter(parent__isnull=True).select_related('author').prefetch_related(
         'replies', 'replies__author'
@@ -272,6 +455,7 @@ def task_create_view(request):
             task = form.save(commit=False)
             task.created_by = request.user
             task.save()
+            form.save_m2m()
 
             TaskActivityLog.objects.create(
                 task=task,
@@ -305,7 +489,7 @@ def task_create_view(request):
 
 @login_required
 def task_edit_view(request, pk):
-    task = get_object_or_404(Task, pk=pk)
+    task = _visible_task_or_404(request, pk)
 
     # Strict RBAC: Only Admin can edit task details or reassign tasks
     if not request.user.is_admin_role:
@@ -323,7 +507,7 @@ def task_edit_view(request, pk):
             # Check status change
             if old_status != updated_task.status:
                 changes.append(f"Status changed from {old_status} to {updated_task.status}")
-                if updated_task.assigned_to:
+                if updated_task.assigned_to and old_assignee == updated_task.assigned_to:
                     create_notification(
                         recipient=updated_task.assigned_to,
                         actor=request.user,
@@ -365,7 +549,7 @@ def task_edit_view(request, pk):
 
 @login_required
 def task_delete_view(request, pk):
-    task = get_object_or_404(Task, pk=pk)
+    task = _visible_task_or_404(request, pk)
 
     # Strict RBAC: Only Admin can delete tasks
     if not request.user.is_admin_role:
@@ -387,7 +571,7 @@ def update_task_status_view(request, pk):
     - Admin (all tasks)
     - Member (only their assigned tasks)
     """
-    task = get_object_or_404(Task, pk=pk)
+    task = _visible_task_or_404(request, pk)
 
     if not task.can_update_status(request.user):
         raise PermissionDenied("You are not authorized to update the status of this task.")
@@ -444,7 +628,7 @@ def update_task_status_view(request, pk):
 
 @login_required
 def add_comment_view(request, pk):
-    task = get_object_or_404(Task, pk=pk)
+    task = _visible_task_or_404(request, pk)
 
     # Strict RBAC: Member can only comment on tasks assigned to them
     if not task.can_comment(request.user):
@@ -459,6 +643,7 @@ def add_comment_view(request, pk):
             return redirect('task_detail', pk=task.pk)
 
         form = TaskCommentForm(request.POST)
+        form.fields['parent'].queryset = task.comments.all()
         if form.is_valid():
             comment = form.save(commit=False)
             comment.task = task
@@ -507,7 +692,10 @@ def add_comment_view(request, pk):
 
 @login_required
 def delete_comment_view(request, comment_id):
-    comment = get_object_or_404(TaskComment, pk=comment_id)
+    comments = TaskComment.objects.all()
+    if not request.user.is_admin_role:
+        comments = comments.filter(task__assigned_to=request.user)
+    comment = get_object_or_404(comments, pk=comment_id)
     task_pk = comment.task.pk
 
     if not comment.can_delete(request.user):
@@ -520,3 +708,220 @@ def delete_comment_view(request, comment_id):
         messages.success(request, "Comment deleted.")
 
     return redirect('task_detail', pk=task_pk)
+
+
+def _admin_only(request):
+    if not request.user.is_admin_role:
+        raise PermissionDenied("Only administrators are permitted to manage this resource.")
+
+
+def _visible_task_or_404(request, pk):
+    tasks = Task.objects.all()
+    if not request.user.is_admin_role:
+        tasks = tasks.filter(assigned_to=request.user)
+    return get_object_or_404(tasks, pk=pk)
+
+
+def _record_checklist_activity(task, actor, details):
+    TaskActivityLog.objects.create(
+        task=task,
+        actor=actor,
+        action='CHECKLIST_UPDATED',
+        details=details,
+    )
+
+
+@login_required
+def checklist_add_view(request, pk):
+    task = _visible_task_or_404(request, pk)
+    _admin_only(request)
+    if request.method == 'POST':
+        form = TaskChecklistItemForm(request.POST)
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.task = task
+            item.position = task.checklist_items.count()
+            item.save()
+            _record_checklist_activity(task, request.user, f"Added checklist item '{item.title}'.")
+            messages.success(request, "Checklist item added.")
+            return redirect('task_detail', pk=task.pk)
+    else:
+        form = TaskChecklistItemForm()
+    return render(request, 'tasks/checklist_item_form.html', {
+        'form': form,
+        'task': task,
+        'title': 'Add checklist item',
+    })
+
+
+@login_required
+def checklist_edit_view(request, pk, item_id):
+    task = _visible_task_or_404(request, pk)
+    _admin_only(request)
+    item = get_object_or_404(TaskChecklistItem, pk=item_id, task=task)
+    if request.method == 'POST':
+        form = TaskChecklistItemForm(request.POST, instance=item)
+        if form.is_valid():
+            item = form.save()
+            _record_checklist_activity(task, request.user, f"Updated checklist item '{item.title}'.")
+            messages.success(request, "Checklist item updated.")
+            return redirect('task_detail', pk=task.pk)
+    else:
+        form = TaskChecklistItemForm(instance=item)
+    return render(request, 'tasks/checklist_item_form.html', {
+        'form': form,
+        'task': task,
+        'title': 'Edit checklist item',
+        'item': item,
+    })
+
+
+@login_required
+@require_POST
+def checklist_delete_view(request, pk, item_id):
+    task = _visible_task_or_404(request, pk)
+    _admin_only(request)
+    item = get_object_or_404(TaskChecklistItem, pk=item_id, task=task)
+    title = item.title
+    item.delete()
+    _record_checklist_activity(task, request.user, f"Deleted checklist item '{title}'.")
+    messages.success(request, "Checklist item deleted.")
+    return redirect('task_detail', pk=task.pk)
+
+
+@login_required
+@require_POST
+def checklist_toggle_view(request, pk, item_id):
+    task = _visible_task_or_404(request, pk)
+    item = get_object_or_404(TaskChecklistItem, pk=item_id, task=task)
+    if not request.user.is_admin_role:
+        item.is_completed = not item.is_completed
+        item.save(update_fields=['is_completed', 'updated_at'])
+        _record_checklist_activity(
+            task,
+            request.user,
+            f"Marked checklist item '{item.title}' {'complete' if item.is_completed else 'incomplete'}.",
+        )
+    else:
+        item.is_completed = not item.is_completed
+        item.save(update_fields=['is_completed', 'updated_at'])
+        _record_checklist_activity(task, request.user, f"Toggled checklist item '{item.title}'.")
+    return redirect('task_detail', pk=task.pk)
+
+
+@login_required
+@require_POST
+def checklist_reorder_view(request, pk, item_id):
+    task = _visible_task_or_404(request, pk)
+    _admin_only(request)
+    item = get_object_or_404(TaskChecklistItem, pk=item_id, task=task)
+    direction = request.POST.get('direction')
+    if direction not in {'up', 'down'}:
+        messages.error(request, "Choose a valid checklist order.")
+        return redirect('task_detail', pk=task.pk)
+    siblings = list(task.checklist_items.all())
+    index = siblings.index(item)
+    swap_index = index - 1 if direction == 'up' else index + 1
+    if 0 <= swap_index < len(siblings):
+        other = siblings[swap_index]
+        item.position, other.position = other.position, item.position
+        item.save(update_fields=['position', 'updated_at'])
+        other.save(update_fields=['position', 'updated_at'])
+        _record_checklist_activity(task, request.user, f"Reordered checklist item '{item.title}'.")
+    return redirect('task_detail', pk=task.pk)
+
+
+@login_required
+def projects_view(request):
+    _admin_only(request)
+    if request.method == 'POST':
+        form = ProjectForm(request.POST)
+        if form.is_valid():
+            project = form.save(commit=False)
+            project.created_by = request.user
+            project.save()
+            messages.success(request, f"Project '{project.name}' created.")
+            return redirect('projects')
+    else:
+        form = ProjectForm()
+    return render(request, 'tasks/projects.html', {
+        'projects': Project.objects.annotate(task_count=Count('tasks')).order_by('archived', 'name'),
+        'form': form,
+    })
+
+
+@login_required
+def project_edit_view(request, pk):
+    _admin_only(request)
+    project = get_object_or_404(Project, pk=pk)
+    if request.method == 'POST':
+        form = ProjectForm(request.POST, instance=project)
+        if form.is_valid():
+            project = form.save()
+            messages.success(request, f"Project '{project.name}' updated.")
+            return redirect('projects')
+    else:
+        form = ProjectForm(instance=project)
+    return render(request, 'tasks/project_form.html', {
+        'project': project,
+        'form': form,
+        'title': f'Edit {project.name}',
+    })
+
+
+@login_required
+@require_POST
+def project_archive_view(request, pk):
+    _admin_only(request)
+    project = get_object_or_404(Project, pk=pk)
+    project.archived = not project.archived
+    project.save(update_fields=['archived', 'updated_at'])
+    action = 'archived' if project.archived else 'restored'
+    messages.success(request, f"Project '{project.name}' {action}.")
+    return redirect('projects')
+
+
+@login_required
+def labels_view(request):
+    _admin_only(request)
+    if request.method == 'POST':
+        form = LabelForm(request.POST)
+        if form.is_valid():
+            label = form.save()
+            messages.success(request, f"Label '{label.name}' created.")
+            return redirect('labels')
+    else:
+        form = LabelForm()
+    return render(request, 'tasks/labels.html', {
+        'labels': Label.objects.all(),
+        'form': form,
+    })
+
+
+@login_required
+def label_edit_view(request, pk):
+    _admin_only(request)
+    label = get_object_or_404(Label, pk=pk)
+    if request.method == 'POST':
+        form = LabelForm(request.POST, instance=label)
+        if form.is_valid():
+            label = form.save()
+            messages.success(request, f"Label '{label.name}' updated.")
+            return redirect('labels')
+    else:
+        form = LabelForm(instance=label)
+    return render(request, 'tasks/label_form.html', {
+        'label': label,
+        'form': form,
+        'title': f'Edit {label.name}',
+    })
+
+
+@login_required
+@require_POST
+def label_delete_view(request, pk):
+    _admin_only(request)
+    label = get_object_or_404(Label, pk=pk)
+    label.delete()
+    messages.success(request, "Label deleted.")
+    return redirect('labels')

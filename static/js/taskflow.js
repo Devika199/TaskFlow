@@ -70,6 +70,16 @@ function confirmAction(options, callback) {
 
 // Sidebar Mobile Toggle
 document.addEventListener('DOMContentLoaded', () => {
+  const updateChartTheme = () => {
+    if (typeof Chart === 'undefined') return;
+    const dark = document.documentElement.dataset.theme === 'dark';
+    Chart.defaults.color = dark ? '#cbd5e1' : '#666';
+    Chart.defaults.borderColor = dark ? '#303747' : '#e2e8f0';
+    Object.values(Chart.instances || {}).forEach((chart) => chart.update());
+  };
+  updateChartTheme();
+  window.addEventListener('taskflow:theme-changed', updateChartTheme);
+
   const sidebarToggle = document.getElementById('sidebarToggle');
   const sidebar = document.getElementById('appSidebar');
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
@@ -116,4 +126,186 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  const palette = document.getElementById('commandPalette');
+  const paletteInput = document.getElementById('commandPaletteInput');
+  const paletteResults = document.getElementById('commandPaletteResults');
+  const paletteModal = palette && window.bootstrap
+    ? bootstrap.Modal.getOrCreateInstance(palette)
+    : null;
+  const shortcutsHelp = document.getElementById('shortcutsHelp');
+  let searchController = null;
+  let selectedResult = 0;
+  let groupShortcutAt = 0;
+  const isAdmin = palette?.dataset.isAdmin === 'true';
+  const commandPages = [
+    { title: 'Dashboard', url: '/dashboard/', icon: 'bi-grid-1x2-fill', keywords: 'home overview' },
+    { title: 'Kanban Board', url: '/kanban/', icon: 'bi-kanban', keywords: 'board workflow' },
+    { title: 'Calendar', url: '/calendar/', icon: 'bi-calendar3', keywords: 'due dates schedule' },
+    { title: 'My Tasks', url: '/tasks/', icon: 'bi-check2-square', keywords: 'task list' }
+  ];
+
+  const activateSelectedResult = () => {
+    const items = paletteResults?.querySelectorAll('[role="option"]');
+    const item = items?.[selectedResult];
+    if (item) item.click();
+  };
+
+  const setSelectedResult = (nextIndex) => {
+    const items = paletteResults?.querySelectorAll('[role="option"]');
+    if (!items?.length) return;
+    selectedResult = (nextIndex + items.length) % items.length;
+    items.forEach((item, index) => {
+      item.setAttribute('aria-selected', String(index === selectedResult));
+      item.classList.toggle('is-active', index === selectedResult);
+    });
+    paletteInput?.setAttribute('aria-activedescendant', items[selectedResult].id);
+    items[selectedResult].scrollIntoView({ block: 'nearest' });
+  };
+
+  const addPaletteOption = (title, description, icon, action) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'command-palette-option';
+    item.id = `command-palette-option-${paletteResults.childElementCount}`;
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', 'false');
+    const iconElement = document.createElement('i');
+    iconElement.className = `bi ${icon}`;
+    iconElement.setAttribute('aria-hidden', 'true');
+    const copy = document.createElement('span');
+    copy.className = 'command-palette-copy';
+    const titleElement = document.createElement('strong');
+    titleElement.textContent = title;
+    const descriptionElement = document.createElement('small');
+    descriptionElement.textContent = description;
+    copy.append(titleElement, descriptionElement);
+    item.append(iconElement, copy);
+    item.addEventListener('click', action);
+    paletteResults.appendChild(item);
+  };
+
+  const renderPalette = async (term = '') => {
+    if (!paletteResults) return;
+    if (searchController) searchController.abort();
+    paletteResults.replaceChildren();
+    paletteInput?.removeAttribute('aria-activedescendant');
+    selectedResult = 0;
+    const normalized = term.trim().toLowerCase();
+    commandPages
+      .filter((entry) => !normalized || `${entry.title} ${entry.keywords}`.toLowerCase().includes(normalized))
+      .forEach((entry) => addPaletteOption(
+        entry.title,
+        'Go to page',
+        entry.icon,
+        () => { window.location.href = entry.url; }
+      ));
+
+    if (isAdmin && (!normalized || 'new task create'.includes(normalized))) {
+      addPaletteOption('New task', 'Create a task', 'bi-plus-circle', () => {
+        paletteModal?.hide();
+        const quickModal = document.getElementById('quickNewTaskModal');
+        if (quickModal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(quickModal).show();
+        } else {
+          window.location.href = '/tasks/create/';
+        }
+      });
+    }
+
+    if (term.trim().length >= 2) {
+      searchController = new AbortController();
+      try {
+        const endpoint = new URL(palette.dataset.searchUrl, window.location.origin);
+        endpoint.searchParams.set('q', term.trim());
+        const response = await fetch(endpoint, { signal: searchController.signal });
+        if (!response.ok) throw new Error(`Search failed (${response.status}).`);
+        const data = await response.json();
+        data.results.forEach((task) => addPaletteOption(
+          task.title,
+          `${task.status} · ${task.priority}`,
+          'bi-check2-square',
+          () => { window.location.href = task.url; }
+        ));
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          const message = document.createElement('p');
+          message.className = 'command-palette-message text-danger';
+          message.setAttribute('role', 'alert');
+          message.textContent = 'Task search is unavailable. Please try again.';
+          paletteResults.appendChild(message);
+          console.error(error);
+        }
+      }
+    } else if (normalized && !commandPages.some((entry) => `${entry.title} ${entry.keywords}`.toLowerCase().includes(normalized))) {
+      const message = document.createElement('p');
+      message.className = 'command-palette-message';
+      message.textContent = 'Type at least two characters to search tasks.';
+      paletteResults.appendChild(message);
+    }
+    setSelectedResult(0);
+  };
+
+  if (palette && paletteInput) {
+    palette.addEventListener('shown.bs.modal', () => {
+      paletteInput.value = '';
+      renderPalette();
+      paletteInput.focus();
+    });
+    paletteInput.addEventListener('input', () => renderPalette(paletteInput.value));
+    paletteInput.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSelectedResult(selectedResult + 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSelectedResult(selectedResult - 1);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        activateSelectedResult();
+      }
+    });
+    palette.addEventListener('hidden.bs.modal', () => {
+      searchController?.abort();
+      document.querySelector('.command-palette-trigger')?.focus();
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    const target = event.target;
+    const editingText = target instanceof HTMLElement
+      && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      if (paletteModal) {
+        event.preventDefault();
+        paletteModal.show();
+      }
+      return;
+    }
+    if (editingText || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === '?' && shortcutsHelp) {
+      event.preventDefault();
+      window.bootstrap.Modal.getOrCreateInstance(shortcutsHelp).show();
+      return;
+    }
+    const now = Date.now();
+    if (event.key.toLowerCase() === 'g') {
+      groupShortcutAt = now;
+      return;
+    }
+    if (now - groupShortcutAt < 1200) {
+      if (event.key.toLowerCase() === 'd') window.location.href = '/dashboard/';
+      if (event.key.toLowerCase() === 'k') window.location.href = '/kanban/';
+      groupShortcutAt = 0;
+      return;
+    }
+    if (isAdmin && event.key.toLowerCase() === 'n') {
+      const quickModal = document.getElementById('quickNewTaskModal');
+      if (quickModal && window.bootstrap) {
+        window.bootstrap.Modal.getOrCreateInstance(quickModal).show();
+      } else {
+        window.location.href = '/tasks/create/';
+      }
+    }
+  });
 });

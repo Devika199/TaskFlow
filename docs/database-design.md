@@ -7,6 +7,7 @@ The TaskFlow data model is designed according to Third Normal Form (3NF) princip
 erDiagram
     User ||--o{ Task : "creates (created_by)"
     User ||--o{ Task : "is assigned to (assigned_to)"
+    User ||--o{ Project : "creates"
     User ||--o{ TaskComment : "writes (author)"
     User ||--o{ Notification : "receives (recipient)"
     User ||--o{ Notification : "triggers (actor)"
@@ -15,6 +16,9 @@ erDiagram
     Task ||--o{ TaskComment : "has"
     Task ||--o{ TaskActivityLog : "records"
     Task ||--o{ Notification : "relates to"
+    Project o|--o{ Task : "groups (optional)"
+    Task ||--o{ TaskChecklistItem : "contains"
+    Task }o--o{ Label : "tagged with"
     TaskComment ||--o{ TaskComment : "parent of reply"
 
     User {
@@ -39,8 +43,37 @@ erDiagram
         string priority "LOW | MEDIUM | HIGH"
         date due_date
         datetime completed_at
+        int project_id FK "nullable"
         int created_by_id FK
         int assigned_to_id FK
+        datetime created_at
+        datetime updated_at
+    }
+
+    Project {
+        int id PK
+        string name UK
+        text description
+        boolean archived
+        int created_by_id FK "nullable"
+        datetime created_at
+        datetime updated_at
+    }
+
+    Label {
+        int id PK
+        string name UK
+        string color "hex RGB"
+        datetime created_at
+        datetime updated_at
+    }
+
+    TaskChecklistItem {
+        int id PK
+        int task_id FK
+        string title
+        int position
+        boolean is_completed
         datetime created_at
         datetime updated_at
     }
@@ -107,10 +140,17 @@ erDiagram
 | `completed_at`| DateTime | Nullable | Timestamp when moved to COMPLETED |
 | `created_by_id`| BigInt | FK -> `accounts_user.id`, ON DELETE SET_NULL | Task author |
 | `assigned_to_id`| BigInt| FK -> `accounts_user.id`, ON DELETE SET_NULL, Index | Designated assignee |
+| `project_id` | BigInt | Nullable FK -> `tasks_project.id`, ON DELETE SET_NULL | Optional task grouping |
 | `created_at` | DateTime | Auto-now-add, Index | Creation timestamp |
 | `updated_at` | DateTime | Auto-now | Last modification timestamp |
 
-### 2.3 Table: `tasks_taskcomment`
+### 2.3 Tables: `tasks_project`, `tasks_label`, `tasks_task_labels`, `tasks_taskchecklistitem`
+- `Project.name` is unique; `archived` prevents assigning a project to new or newly edited tasks. Existing tasks remain linked and valid when a project is archived.
+- `Label.name` is unique; `color` is validated as a six-digit RGB hex value (`#RRGGBB`). Task-label assignment is many-to-many.
+- Checklist items belong to one task, are ordered by `position` then primary key, and retain completion independently of task status. Completing all items does not complete the task.
+- Project and label administration is restricted to administrators. Members can see projects only when they contain at least one task assigned to that member; labels are read-only to members.
+
+### 2.4 Table: `tasks_taskcomment`
 | Column Name | Type | Modifiers / Constraints | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | BigAutoField | Primary Key, Auto Increment | Comment ID |
@@ -121,7 +161,7 @@ erDiagram
 | `created_at` | DateTime | Auto-now-add | Timestamp of posting |
 | `updated_at` | DateTime | Auto-now | Timestamp of edit |
 
-### 2.4 Table: `tasks_taskactivitylog`
+### 2.5 Table: `tasks_taskactivitylog`
 | Column Name | Type | Modifiers / Constraints | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | BigAutoField | Primary Key, Auto Increment | Audit log ID |
@@ -131,7 +171,7 @@ erDiagram
 | `details` | TextField | Nullable | Human-readable log details |
 | `timestamp` | DateTime | Auto-now-add | Audit timestamp |
 
-### 2.5 Table: `notifications_notification`
+### 2.6 Table: `notifications_notification`
 | Column Name | Type | Modifiers / Constraints | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | BigAutoField | Primary Key, Auto Increment | Notification ID |

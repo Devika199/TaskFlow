@@ -38,6 +38,7 @@ All API endpoints are prefixed with `/api/v1/`. Requests modifying state require
   - `overdue`: `true` / `false`
   - `ordering`: `due_date`, `-created_at`, `priority`
 - **Response (200 OK):** Array of task objects with author, assignee summary, overdue badge flag, and comment counts.
+- Each task includes an optional `project` ID, a `labels` array of IDs, and ordered `checklist_items` (id, task, title, position, completion flag). Related data is eagerly loaded for task list/detail responses.
 
 ### 2.2 Create Task
 - **Endpoint:** `POST /api/v1/tasks/`
@@ -60,7 +61,7 @@ All API endpoints are prefixed with `/api/v1/`. Requests modifying state require
 
 ### 2.4 Update Task (Full / Partial)
 - **Endpoint:** `PUT /api/v1/tasks/{id}/` or `PATCH /api/v1/tasks/{id}/`
-- **Permissions:** Admin OR task creator OR task assignee (members cannot change assignment if not admin/creator).
+- **Permissions:** Administrators only. Members may use the status-only action on tasks assigned to them.
 
 ### 2.5 Quick Status Update (Kanban Drag-and-Drop)
 - **Endpoint:** `PATCH /api/v1/tasks/{id}/update-status/`
@@ -83,19 +84,37 @@ All API endpoints are prefixed with `/api/v1/`. Requests modifying state require
 
 ### 2.6 Delete Task
 - **Endpoint:** `DELETE /api/v1/tasks/{id}/`
-- **Permissions:** Admin or Task Creator.
+- **Permissions:** Administrators only.
 - **Response:** `204 No Content`.
+
+### 2.7 Projects
+- **Endpoints:** `GET/POST /api/v1/projects/`, `GET/PUT/PATCH /api/v1/projects/{id}/`, `POST /api/v1/projects/{id}/archive/`.
+- Administrators can create and edit projects and use the archive action to archive or restore them. Project deletion is not exposed.
+- Members can read only projects containing tasks assigned to them; other project IDs return `404 Not Found`.
+- Archived projects cannot be assigned to new tasks. Existing tasks remain linked to archived projects.
+
+### 2.8 Labels
+- **Endpoints:** `GET/POST /api/v1/labels/`, `GET/PUT/PATCH/DELETE /api/v1/labels/{id}/`.
+- Administrators can manage labels; members can read labels only.
+- Label colours must be six-digit RGB hex values (`#RRGGBB`). Label names are unique.
+- Administrators attach labels by sending label IDs in the task `labels` array.
+
+### 2.9 Checklist Items
+- **Endpoints:** `GET/POST /api/v1/checklist-items/`, `GET/PUT/PATCH/DELETE /api/v1/checklist-items/{id}/`; an optional `task` query parameter filters a list.
+- Administrators can create, edit, delete, and reorder checklist items using `task`, `title`, and `position`.
+- Members can update only `is_completed`, and only on a task assigned to them. Attempts to access another member's item return `404`; attempts to change item content/order return `403`.
+- Checklist completion is independent of task status and does not complete the task automatically.
 
 ---
 
 ## 3. Comments & Threading Endpoints
 
 ### 3.1 List Comments for Task
-- **Endpoint:** `GET /api/v1/tasks/{task_id}/comments/`
+- **Endpoint:** `GET /api/v1/comments/?task={task_id}`
 - **Response (200 OK):** Nested array of comments with children/replies.
 
 ### 3.2 Add Comment or Reply
-- **Endpoint:** `POST /api/v1/tasks/{task_id}/comments/`
+- **Endpoint:** `POST /api/v1/comments/`
 - **Payload:**
 ```json
 {
@@ -187,3 +206,9 @@ All API endpoints are prefixed with `/api/v1/`. Requests modifying state require
   }
 ]
 ```
+
+## 6. Browser Task Discovery & Export
+- **Calendar:** `GET /calendar/?month=YYYY-MM`; administrators may add `assigned_to=<user-id>` or `assigned_to=unassigned`. The server limits members to tasks assigned to their authenticated account. Tasks without a due date are not placed on the month grid.
+- **Command-palette search:** `GET /tasks/command-search/?q=<term>` requires an authenticated browser session and returns up to 10 task matches with task ID, title, display status, display priority, and detail URL. Members are scoped to assigned tasks; administrators can search all tasks. Queries shorter than two characters return an empty results array.
+- **Task list CSV:** `GET /tasks/export.csv` is administrator-only. It accepts the task-list filters (`q`, `status`, `priority`, `project`, `label`, `assigned_to`, `overdue`, and `sort`) and returns a CSV attachment. Cells beginning with formula-trigger characters (`=`, `+`, `-`, `@`) are prefixed with a single quote.
+- Dark mode is a client-side preference only and does not create an API endpoint or change authorization.

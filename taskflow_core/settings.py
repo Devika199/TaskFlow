@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -6,6 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
 SECRET_KEY = 'django-insecure-taskflow-saas-enterprise-key-2026-prod-grade'
+ADMIN_REGISTRATION_CODE = os.environ.get('ADMIN_REGISTRATION_CODE', '')
 
 DEBUG = True
 
@@ -80,6 +82,11 @@ AUTH_PASSWORD_VALIDATORS = [
         'OPTIONS': {'min_length': 6},
     },
 ]
+
+if "test" in sys.argv:
+    PASSWORD_HASHERS = [
+        "django.contrib.auth.hashers.MD5PasswordHasher",
+    ]
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'

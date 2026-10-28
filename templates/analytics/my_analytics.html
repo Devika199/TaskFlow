@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+
+{% block title %}My Analytics{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h3 class="fw-bold mb-1">My Analytics</h3>
+    <p class="text-muted small mb-0">A personal view of your tasks, priorities, and progress.</p>
+  </div>
+  <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Back to Dashboard
+  </a>
+</div>
+
+{% if total_tasks == 0 %}
+<div class="card-saas mb-4 p-4 text-center" role="status">
+  <div class="kpi-icon-wrapper bg-primary-subtle text-primary mx-auto mb-3">
+    <i class="bi bi-clipboard2-check" aria-hidden="true"></i>
+  </div>
+  <h4 class="fw-bold">No assigned tasks yet</h4>
+  <p class="text-muted mb-0">When tasks are assigned to you, your personal analytics will appear here.</p>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="kpi-card h-100">
+      <div><div class="kpi-title">Total assigned</div><div class="kpi-value">{{ total_tasks }}</div></div>
+      <div class="kpi-icon-wrapper bg-primary-subtle text-primary"><i class="bi bi-list-task" aria-hidden="true"></i></div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="kpi-card h-100">
+      <div><div class="kpi-title">Completed</div><div class="kpi-value text-success">{{ completed_tasks }}</div></div>
+      <div class="kpi-icon-wrapper bg-success-subtle text-success"><i class="bi bi-check2-circle" aria-hidden="true"></i></div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="kpi-card h-100">
+      <div><div class="kpi-title">In progress</div><div class="kpi-value text-primary">{{ in_progress_tasks }}</div></div>
+      <div class="kpi-icon-wrapper bg-info-subtle text-info"><i class="bi bi-arrow-repeat" aria-hidden="true"></i></div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="kpi-card h-100">
+      <div><div class="kpi-title">To do</div><div class="kpi-value text-secondary">{{ todo_tasks }}</div></div>
+      <div class="kpi-icon-wrapper bg-secondary-subtle text-secondary"><i class="bi bi-list-check" aria-hidden="true"></i></div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="kpi-card h-100">
+      <div>
+        <div class="kpi-title">Overdue</div>
+        <div class="kpi-value {% if overdue_tasks %}text-danger{% endif %}">{{ overdue_tasks }}</div>
+        <div class="small text-muted mt-1">Uncompleted past-due tasks</div>
+      </div>
+      <div class="kpi-icon-wrapper bg-danger-subtle text-danger"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="kpi-card h-100">
+      <div>
+        <div class="kpi-title">Due today / soon</div>
+        <div class="kpi-value">{{ due_today_tasks|add:due_soon_tasks }}</div>
+        <div class="small text-muted mt-1">{{ due_today_tasks }} today · {{ due_soon_tasks }} in 1–3 days</div>
+      </div>
+      <div class="kpi-icon-wrapper bg-warning-subtle text-warning"><i class="bi bi-calendar2-week" aria-hidden="true"></i></div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="kpi-card h-100">
+      <div>
+        <div class="kpi-title">Completion rate</div>
+        <div class="kpi-value text-success">{{ completion_rate }}%</div>
+        <div class="progress mt-2" role="progressbar" aria-label="Task completion rate" aria-valuenow="{{ completion_rate }}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar bg-success" style="width: {{ completion_rate }}%"></div>
+        </div>
+      </div>
+      <div class="kpi-icon-wrapper bg-success-subtle text-success"><i class="bi bi-graph-up-arrow" aria-hidden="true"></i></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-lg-6">
+    <div class="card-saas h-100">
+      <div class="card-header"><span class="fw-bold"><i class="bi bi-pie-chart text-primary me-2" aria-hidden="true"></i>Status distribution</span></div>
+      <div class="card-body">
+        <div style="position: relative; width: 100%; height: 260px;"><canvas id="myStatusChart" aria-label="Tasks by status"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card-saas h-100">
+      <div class="card-header"><span class="fw-bold"><i class="bi bi-bar-chart text-primary me-2" aria-hidden="true"></i>Priority breakdown</span></div>
+      <div class="card-body">
+        <div style="position: relative; width: 100%; height: 260px;"><canvas id="myPriorityChart" aria-label="Tasks by priority"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12">
+    <div class="card-saas">
+      <div class="card-header"><span class="fw-bold"><i class="bi bi-graph-up text-primary me-2" aria-hidden="true"></i>Tasks completed per week</span><span class="small text-muted">Last 6 weeks</span></div>
+      <div class="card-body">
+        <div style="position: relative; width: 100%; height: 280px;"><canvas id="myWeeklyChart" aria-label="Completed tasks by week"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card-saas mb-4">
+  <div class="card-header"><span class="fw-bold"><i class="bi bi-lightning-charge text-warning me-2" aria-hidden="true"></i>Most urgent tasks</span><span class="small text-muted">Up to 5 active tasks</span></div>
+  <div class="list-group list-group-flush">
+    {% for task in urgent_tasks %}
+    <a href="{% url 'task_detail' task.pk %}" class="list-group-item list-group-item-action d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+      <span class="fw-semibold text-break">{{ task.title }}</span>
+      <span class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge {% if task.priority == 'HIGH' %}bg-danger-subtle text-danger{% elif task.priority == 'MEDIUM' %}bg-warning-subtle text-warning-emphasis{% else %}bg-secondary-subtle text-secondary{% endif %}">{{ task.get_priority_display }}</span>
+        <span class="badge bg-light text-secondary border">{{ task.get_status_display }}</span>
+        {% if task.due_date %}<span class="small text-muted">Due {{ task.due_date|date:"M j, Y" }}</span>{% else %}<span class="small text-muted">No due date</span>{% endif %}
+      </span>
+    </a>
+    {% empty %}
+    <div class="p-4 text-center text-muted">No active tasks need your attention.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ chart_data|json_script:"my-analytics-chart-data" }}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const data = JSON.parse(document.getElementById('my-analytics-chart-data').textContent);
+    const statusCanvas = document.getElementById('myStatusChart');
+    const priorityCanvas = document.getElementById('myPriorityChart');
+    const weeklyCanvas = document.getElementById('myWeeklyChart');
+
+    new Chart(statusCanvas, {
+      type: 'doughnut',
+      data: {
+        labels: data.status.labels,
+        datasets: [{ data: data.status.values, backgroundColor: ['#94a3b8', '#3b82f6', '#10b981'], borderColor: '#ffffff', borderWidth: 2 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '70%' }
+    });
+
+    new Chart(priorityCanvas, {
+      type: 'bar',
+      data: {
+        labels: data.priority.labels,
+        datasets: [{ label: 'Tasks', data: data.priority.values, backgroundColor: ['#ef4444', '#f59e0b', '#64748b'], borderRadius: 6, maxBarThickness: 48 }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } }
+      }
+    });
+
+    new Chart(weeklyCanvas, {
+      type: 'line',
+      data: {
+        labels: data.weekly.labels,
+        datasets: [{ label: 'Completed tasks', data: data.weekly.values, borderColor: '#5256c9', backgroundColor: 'rgba(82, 86, 201, 0.12)', fill: true, tension: 0.3, pointRadius: 4 }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } }
+      }
+    });
+  });
+</script>
+{% endblock %}

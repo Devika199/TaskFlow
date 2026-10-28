@@ -22,6 +22,7 @@ graph TD
     subgraph Application ["Django Application Tier (Python 3.12)"]
         Views["Django Template Views (HTML Rendering)"]
         DRF["Django REST Framework API ViewSets & Serializers"]
+        MCP["Local MCP server (stdio)"]
         
         subgraph Domains ["Domain Modules"]
             AccountService["Accounts & User Management"]
@@ -43,6 +44,7 @@ graph TD
     Gateway --> Application
     Views --> Domains
     DRF --> Domains
+    MCP --> Domains
     Domains --> ORM
     ORM --> DB
 ```
@@ -62,7 +64,7 @@ graph TD
 ### 2.2 Security & Authentication Pipeline
 1. **CSRF Middleware:** Validates `X-CSRFToken` on all non-safe HTTP methods (POST, PUT, PATCH, DELETE).
 2. **Session Authentication:** Secure HTTP-only cookies protect user credentials.
-3. **Role-Based Permissions (`IsAdminUserOrReadOnly`, `IsTaskOwnerOrAdmin`):** Ensures members can only edit their authorized tasks, while administrators have system-wide authority.
+3. **Role-Based Permissions:** Members can view only their assigned tasks and update task status or checklist completion on those tasks. Administrators manage task details, checklist content/order, projects, and labels.
 
 ### 2.3 Application & Business Logic
 - **`accounts` App:**
@@ -70,13 +72,20 @@ graph TD
   - Roles: `ADMIN` and `MEMBER`.
   - Department, job title, and avatar initials generation.
 - **`tasks` App:**
-  - Manages `Task`, `TaskActivityLog`, and `TaskComment`.
+  - Manages `Task`, optional `Project`, reusable `Label`, ordered `TaskChecklistItem`, `TaskActivityLog`, and `TaskComment`.
+  - Task list and Kanban queries prefetch labels, checklist items, and comments and select the optional project to avoid per-task relationship queries.
   - Automatic overdue tagging via model properties and database query annotators.
   - Dispatches notifications on assignment and status progression.
 - **`notifications` App:**
   - Tracks user-targeted events, read/unread states, and direct URLs.
 - **`api` App:**
   - DRF Serializers, ModelViewSets, and granular custom action endpoints.
+- **Local MCP integration (`mcp_server`):**
+  - Official MCP Python SDK server, launched as a local stdio subprocess; it does not expose a network listener.
+  - Resolves the active user configured by `TASKFLOW_MCP_USER` on every tool call, then applies TaskFlow task visibility and role rules.
+  - Runs synchronous Django ORM operations through `sync_to_async` and uses the existing task form, status serializer, and notification service.
+
+See [MCP integration](./mcp.md) for client configuration, tool permissions, and tested behavior.
 
 ---
 

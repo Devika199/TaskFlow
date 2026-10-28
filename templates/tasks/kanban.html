@@ -10,7 +10,7 @@
     <h3 class="fw-bold mb-1">Kanban Workflow Board</h3>
     <p class="text-muted small mb-0">Drag and drop cards across columns to update workflow progression</p>
   </div>
-  <div class="d-flex gap-2">
+  <div class="d-flex flex-wrap gap-2 kanban-header-actions">
     <a href="{% url 'task_list' %}" class="btn btn-outline-secondary">
       <i class="bi bi-list-ul me-1"></i>List View
     </a>
@@ -24,7 +24,7 @@
 
 <!-- Filter Toolbar -->
 <div class="card-saas p-3 mb-4">
-  <form method="GET" class="row g-2 align-items-center">
+  <form method="GET" class="row g-2 align-items-center kanban-filter-form">
     <div class="col-md-4">
       <div class="search-input-group">
         <i class="bi bi-search"></i>
@@ -37,6 +37,22 @@
         <option value="HIGH" {% if current_priority == 'HIGH' %}selected{% endif %}>High Priority</option>
         <option value="MEDIUM" {% if current_priority == 'MEDIUM' %}selected{% endif %}>Medium Priority</option>
         <option value="LOW" {% if current_priority == 'LOW' %}selected{% endif %}>Low Priority</option>
+      </select>
+    </div>
+    <div class="col-sm-6 col-md-3">
+      <select name="project" class="form-select" aria-label="Filter by project">
+        <option value="">All Projects</option>
+        {% for project in projects %}
+        <option value="{{ project.id }}" {% if current_project == project.id|stringformat:"s" %}selected{% endif %}>{{ project.name }}{% if project.archived %} (Archived){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-sm-6 col-md-3">
+      <select name="label" class="form-select" aria-label="Filter by label">
+        <option value="">All Labels</option>
+        {% for label in labels %}
+        <option value="{{ label.id }}" {% if current_label == label.id|stringformat:"s" %}selected{% endif %}>{{ label.name }}</option>
+        {% endfor %}
       </select>
     </div>
     {% if user.is_admin_role %}
@@ -52,7 +68,7 @@
     {% endif %}
     <div class="col-md-2 d-flex gap-2">
       <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel-fill me-1"></i>Filter</button>
-      {% if current_q or current_priority or current_assignee %}
+      {% if current_q or current_priority or current_project or current_label or current_assignee %}
       <a href="{% url 'kanban' %}" class="btn btn-outline-secondary" title="Reset Filters"><i class="bi bi-x-lg"></i></a>
       {% endif %}
     </div>
@@ -80,19 +96,34 @@
       {% for task in todo_tasks %}
       <div class="kanban-card" data-task-id="{{ task.id }}">
         <div class="d-flex justify-content-between align-items-start mb-2">
-          <span class="badge badge-priority-{{ task.priority|lower }}">
-            <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
-          </span>
-          {% if task.is_overdue %}
-          <span class="badge badge-overdue small">Overdue</span>
-          {% elif task.due_status == 'today' %}
-          <span class="badge bg-warning-subtle text-warning small">Today</span>
-          {% endif %}
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge badge-priority-{{ task.priority|lower }}">
+              <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
+            </span>
+            {% if task.is_overdue %}
+            <span class="badge badge-overdue small">Overdue</span>
+            {% elif task.due_status == 'today' %}
+            <span class="badge bg-warning-subtle text-warning small">Today</span>
+            {% endif %}
+          </div>
+          <button type="button" class="kanban-card-drag-handle" aria-label="Drag task to another status" title="Drag to change status">
+            <i class="bi bi-grip-vertical" aria-hidden="true"></i>
+          </button>
         </div>
 
         <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none d-block mb-1">
           {{ task.title }}
         </a>
+        {% if task.project %}<span class="badge bg-primary-subtle text-primary-emphasis mb-2">{{ task.project.name }}</span>{% endif %}
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          {% for label in task.labels.all %}<span class="badge border" style="background-color: {{ label.color }}; color: #fff;">{{ label.name }}</span>{% endfor %}
+        </div>
+        {% if task.checklist_total %}
+        <div class="task-checklist-progress mb-2" aria-label="Checklist progress: {{ task.checklist_completed }} of {{ task.checklist_total }} complete">
+          <div class="progress"><div class="progress-bar bg-primary" style="width: {{ task.checklist_progress }}%"></div></div>
+          <span>{{ task.checklist_completed }}/{{ task.checklist_total }}</span>
+        </div>
+        {% endif %}
         {% if task.description %}
         <p class="text-muted small mb-3 text-truncate">{{ task.description|truncatechars:80 }}</p>
         {% endif %}
@@ -142,19 +173,34 @@
       {% for task in in_progress_tasks %}
       <div class="kanban-card" data-task-id="{{ task.id }}">
         <div class="d-flex justify-content-between align-items-start mb-2">
-          <span class="badge badge-priority-{{ task.priority|lower }}">
-            <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
-          </span>
-          {% if task.is_overdue %}
-          <span class="badge badge-overdue small">Overdue</span>
-          {% elif task.due_status == 'today' %}
-          <span class="badge bg-warning-subtle text-warning small">Today</span>
-          {% endif %}
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge badge-priority-{{ task.priority|lower }}">
+              <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
+            </span>
+            {% if task.is_overdue %}
+            <span class="badge badge-overdue small">Overdue</span>
+            {% elif task.due_status == 'today' %}
+            <span class="badge bg-warning-subtle text-warning small">Today</span>
+            {% endif %}
+          </div>
+          <button type="button" class="kanban-card-drag-handle" aria-label="Drag task to another status" title="Drag to change status">
+            <i class="bi bi-grip-vertical" aria-hidden="true"></i>
+          </button>
         </div>
 
         <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none d-block mb-1">
           {{ task.title }}
         </a>
+        {% if task.project %}<span class="badge bg-primary-subtle text-primary-emphasis mb-2">{{ task.project.name }}</span>{% endif %}
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          {% for label in task.labels.all %}<span class="badge border" style="background-color: {{ label.color }}; color: #fff;">{{ label.name }}</span>{% endfor %}
+        </div>
+        {% if task.checklist_total %}
+        <div class="task-checklist-progress mb-2" aria-label="Checklist progress: {{ task.checklist_completed }} of {{ task.checklist_total }} complete">
+          <div class="progress"><div class="progress-bar bg-primary" style="width: {{ task.checklist_progress }}%"></div></div>
+          <span>{{ task.checklist_completed }}/{{ task.checklist_total }}</span>
+        </div>
+        {% endif %}
         {% if task.description %}
         <p class="text-muted small mb-3 text-truncate">{{ task.description|truncatechars:80 }}</p>
         {% endif %}
@@ -204,15 +250,30 @@
       {% for task in completed_tasks %}
       <div class="kanban-card" data-task-id="{{ task.id }}" style="opacity: 0.9;">
         <div class="d-flex justify-content-between align-items-start mb-2">
-          <span class="badge badge-priority-{{ task.priority|lower }}">
-            <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
-          </span>
-          <span class="badge badge-status-completed small"><i class="bi bi-check-lg me-1"></i>Done</span>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge badge-priority-{{ task.priority|lower }}">
+              <i class="bi bi-flag-fill me-1"></i>{{ task.get_priority_display }}
+            </span>
+            <span class="badge badge-status-completed small"><i class="bi bi-check-lg me-1"></i>Done</span>
+          </div>
+          <button type="button" class="kanban-card-drag-handle" aria-label="Drag task to another status" title="Drag to change status">
+            <i class="bi bi-grip-vertical" aria-hidden="true"></i>
+          </button>
         </div>
 
         <a href="{% url 'task_detail' task.id %}" class="fw-bold text-dark text-decoration-none d-block mb-1 text-decoration-line-through">
           {{ task.title }}
         </a>
+        {% if task.project %}<span class="badge bg-primary-subtle text-primary-emphasis mb-2">{{ task.project.name }}</span>{% endif %}
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          {% for label in task.labels.all %}<span class="badge border" style="background-color: {{ label.color }}; color: #fff;">{{ label.name }}</span>{% endfor %}
+        </div>
+        {% if task.checklist_total %}
+        <div class="task-checklist-progress mb-2" aria-label="Checklist progress: {{ task.checklist_completed }} of {{ task.checklist_total }} complete">
+          <div class="progress"><div class="progress-bar bg-primary" style="width: {{ task.checklist_progress }}%"></div></div>
+          <span>{{ task.checklist_completed }}/{{ task.checklist_total }}</span>
+        </div>
+        {% endif %}
         {% if task.description %}
         <p class="text-muted small mb-3 text-truncate">{{ task.description|truncatechars:80 }}</p>
         {% endif %}
@@ -248,5 +309,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/kanban.js' %}"></script>
+<script src="{% static 'js/kanban.js' %}?v=kanban-responsive"></script>
 {% endblock %}

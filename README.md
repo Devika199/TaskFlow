@@ -68,6 +68,23 @@ For quick evaluation, use the one-click buttons on the login screen (`/login/`) 
 pip install django djangorestframework
 ```
 
+### Admin registration access code (optional)
+Public registration defaults to a member account. To enable admin account registration, set `ADMIN_REGISTRATION_CODE` in the server environment to a private value before starting Django. Copy `.env.example` as a reference; this project does not automatically load `.env` files.
+
+PowerShell:
+```powershell
+$env:ADMIN_REGISTRATION_CODE = "set-a-private-code"
+python manage.py runserver
+```
+
+macOS/Linux:
+```bash
+export ADMIN_REGISTRATION_CODE="set-a-private-code"
+python manage.py runserver
+```
+
+If the variable is unset or empty, admin registration is disabled. Never commit a real access code.
+
 ### 3. Run Database Migrations
 ```bash
 python manage.py migrate

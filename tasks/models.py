@@ -1,6 +1,45 @@
 from django.conf import settings
 from django.db import models
+from django.core.validators import RegexValidator
 from django.utils import timezone
+
+
+class Project(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    description = models.TextField(blank=True, default='')
+    archived = models.BooleanField(default=False, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_projects',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Label(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    color = models.CharField(
+        max_length=7,
+        default='#4f46e5',
+        validators=[RegexValidator(r'^#[0-9A-Fa-f]{6}$', 'Enter a valid hex colour such as #4f46e5.')],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
 
 
 class Task(models.Model):
@@ -40,6 +79,14 @@ class Task(models.Model):
     )
     due_date = models.DateField(null=True, blank=True, db_index=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks',
+    )
+    labels = models.ManyToManyField(Label, blank=True, related_name='tasks')
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -91,6 +138,19 @@ class Task(models.Model):
             return 'soon'
         return 'upcoming'
 
+    @property
+    def checklist_total(self):
+        return len(self.checklist_items.all())
+
+    @property
+    def checklist_completed(self):
+        return sum(item.is_completed for item in self.checklist_items.all())
+
+    @property
+    def checklist_progress(self):
+        total = self.checklist_total
+        return round(self.checklist_completed / total * 100) if total else 0
+
     def save(self, *args, **kwargs):
         if self.status == self.STATUS_COMPLETED:
             if not self.completed_at:
@@ -125,6 +185,26 @@ class Task(models.Model):
 
     def can_comment(self, user):
         return self.can_view(user)
+
+
+class TaskChecklistItem(models.Model):
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name='checklist_items',
+    )
+    title = models.CharField(max_length=255)
+    position = models.PositiveIntegerField(default=0)
+    is_completed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['position', 'id']
+        indexes = [models.Index(fields=['task', 'position'])]
+
+    def __str__(self):
+        return self.title
 
 
 class TaskComment(models.Model):

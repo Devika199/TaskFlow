@@ -22,14 +22,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function restoreCardPosition(list, item, oldIndex) {
+    const originalPosition = list.children[oldIndex];
+    list.insertBefore(item, originalPosition || null);
+    updateColumnCounts();
+  }
+
   columns.forEach(col => {
     new Sortable(col, {
       group: 'taskflow-kanban',
       animation: 180,
+      delay: 150,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      fallbackTolerance: 5,
+      draggable: '.kanban-card',
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       dragClass: 'sortable-drag',
-      handle: '.kanban-card',
+      handle: '.kanban-card-drag-handle',
       onEnd: async function (evt) {
         const itemEl = evt.item;
         const taskId = itemEl.getAttribute('data-task-id');
@@ -55,8 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           if (!response.ok) {
             // Revert card position on error
-            evt.from.appendChild(itemEl);
-            updateColumnCounts();
+            restoreCardPosition(evt.from, itemEl, evt.oldIndex);
             showToast(data.detail || 'Failed to update task status.', 'error');
             return;
           }
@@ -73,8 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
           console.error('Network error during status update:', error);
-          evt.from.appendChild(itemEl);
-          updateColumnCounts();
+          restoreCardPosition(evt.from, itemEl, evt.oldIndex);
           showToast('Network error while updating status.', 'error');
         }
       }

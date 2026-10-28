@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block title %}Task Calendar{% endblock %}
+
+{% block content %}
+<div class="calendar-toolbar mb-4">
+  <div>
+    <h1 class="h3 fw-bold mb-1">Task Calendar</h1>
+    <p class="text-muted mb-0">Tasks with due dates in {{ month_title }}.</p>
+  </div>
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    {% if user.is_admin_role %}
+    <form method="get" class="d-flex align-items-center gap-2">
+      <input type="hidden" name="month" value="{{ current_month }}">
+      <label class="visually-hidden" for="calendarAssignee">Filter by assignee</label>
+      <select class="form-select" name="assigned_to" id="calendarAssignee" aria-label="Filter by assignee">
+        <option value="">All assignees</option>
+        <option value="unassigned" {% if current_assignee == 'unassigned' %}selected{% endif %}>Unassigned</option>
+        {% for person in users %}
+        <option value="{{ person.id }}" {% if current_assignee == person.id|stringformat:"s" %}selected{% endif %}>{{ person.display_name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary">Apply</button>
+    </form>
+    {% endif %}
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{% url 'task_calendar' %}?month={{ previous_month }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}" aria-label="Previous month">
+        <i class="bi bi-chevron-left" aria-hidden="true"></i><span class="visually-hidden">Previous month</span>
+      </a>
+      <a class="btn btn-outline-secondary" href="{% url 'task_calendar' %}" aria-label="Go to current month">Today</a>
+      <a class="btn btn-outline-secondary" href="{% url 'task_calendar' %}?month={{ next_month }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}" aria-label="Next month">
+        <i class="bi bi-chevron-right" aria-hidden="true"></i><span class="visually-hidden">Next month</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<section class="card-saas" aria-label="Tasks calendar for {{ month_title }}">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <h2 class="h5 fw-bold mb-0">{{ month_title }}</h2>
+    <div class="d-flex flex-wrap gap-2 small" aria-label="Priority legend">
+      <span class="badge badge-priority-high">High priority</span>
+      <span class="badge badge-priority-medium">Medium priority</span>
+      <span class="badge badge-priority-low">Low priority</span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="calendar-grid" role="grid" aria-label="{{ month_title }}">
+      {% for weekday in weekdays %}
+      <div class="calendar-weekday" role="columnheader">{{ weekday }}</div>
+      {% endfor %}
+      {% for week in weeks %}
+        {% for day in week %}
+        <div class="calendar-day {% if not day.in_month %}is-outside-month{% endif %} {% if day.is_today %}is-today{% endif %}" role="gridcell" aria-label="{{ day.date|date:'l, F j, Y' }}">
+          <span class="calendar-day-number">{{ day.date.day }}</span>
+          <div class="calendar-task-list">
+            {% for task in day.tasks %}
+            <a class="calendar-task priority-{{ task.priority|lower }}" href="{% url 'task_detail' task.id %}"
+               title="{{ task.title }} — {{ task.get_priority_display }} priority{% if task.assigned_to %}, {{ task.assigned_to.display_name }}{% endif %}">
+              {{ task.title }}
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -15,6 +15,10 @@ Quality assurance for TaskFlow employs a pyramid structure focusing on unit test
   - Verify default status is `TODO` and default priority is `MEDIUM`.
   - Verify overdue logic (`is_overdue` returns true only if `due_date < today` and `status != COMPLETED`).
   - Verify automatic `completed_at` timestamp setting when status moves to `COMPLETED`.
+- **Collaboration Model Tests:**
+  - Verify optional project links, label associations, checklist ordering, and checklist completion progress.
+  - Verify labels reject invalid hex colours and project/label forms enforce unique names.
+  - Verify checklist completion never changes task status.
 - **Comment Model Tests:**
   - Verify parent-child nested comment relationship.
 
@@ -25,6 +29,17 @@ Quality assurance for TaskFlow employs a pyramid structure focusing on unit test
   - Non-authenticated requests to protected endpoints redirect to `/accounts/login/` or return 401/403.
 - **Admin Capabilities:**
   - Admin can update any task, reassign tasks, and access workload analytics.
+- **Projects, Labels, and Checklists:**
+  - Admin creates, edits, archives/restores projects and manages labels/checklist content.
+  - Members see only projects containing their assigned tasks and cannot manage projects, labels, or checklist content/order.
+  - Members can toggle checklist completion only for assigned tasks; inaccessible checklist/task objects return 404.
+  - Task list and Kanban project/label filters retain selected values; checklist progress appears on detail, list, and board cards.
+- **Calendar, Search, and Export:**
+  - Calendar month navigation includes due-date tasks only and highlights today; members see assigned tasks only while admins can filter by assignee.
+  - Command-palette search is authenticated and never returns tasks outside the task-list visibility scope.
+  - CSV export is administrator-only, respects list filters, uses a safe attachment filename, and escapes formula-triggering cells.
+  - Verify the theme honors system preference by default, persists explicit changes, and initializes before first paint on auth, landing, dashboard, and chart pages.
+  - Verify Ctrl/Cmd+K, Escape, keyboard result navigation, the shortcuts dialog, and visible focus behavior.
 
 ### 2.3 API Integration Tests (DRF)
 - **Task API (`/api/v1/tasks/`):**
@@ -39,6 +54,10 @@ Quality assurance for TaskFlow employs a pyramid structure focusing on unit test
   - Mark all notifications as read.
 - **Analytics API (`/api/v1/analytics/overview/`):**
   - Verify aggregate metrics calculation matches database counts.
+- **Collaboration APIs:**
+  - Verify administrator CRUD/assignment for projects, labels, and checklist items.
+  - Verify project visibility is member-scoped, hidden projects/items return 404, and members can PATCH only checklist completion on assigned tasks.
+  - Verify task responses include project, label IDs, and ordered checklist items without per-task related-object queries.
 
 ### 2.4 Browser & Interactive QA
 - **Kanban Drag-and-Drop:**

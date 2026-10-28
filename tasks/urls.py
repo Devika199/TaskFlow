@@ -2,8 +2,12 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('', views.dashboard_view, name='dashboard'),
+    path('', views.landing_view, name='landing'),
+    path('dashboard/', views.dashboard_view, name='dashboard'),
     path('tasks/', views.task_list_view, name='task_list'),
+    path('calendar/', views.task_calendar_view, name='task_calendar'),
+    path('tasks/command-search/', views.task_palette_search_view, name='task_palette_search'),
+    path('tasks/export.csv', views.task_csv_export_view, name='task_csv_export'),
     path('kanban/', views.kanban_view, name='kanban'),
     path('tasks/create/', views.task_create_view, name='task_create'),
     path('tasks/<int:pk>/', views.task_detail_view, name='task_detail'),
@@ -12,4 +16,15 @@ urlpatterns = [
     path('tasks/<int:pk>/delete/', views.task_delete_view, name='task_delete'),
     path('tasks/<int:pk>/comment/', views.add_comment_view, name='add_comment'),
     path('comments/<int:comment_id>/delete/', views.delete_comment_view, name='delete_comment'),
+    path('tasks/<int:pk>/checklist/add/', views.checklist_add_view, name='checklist_add'),
+    path('tasks/<int:pk>/checklist/<int:item_id>/edit/', views.checklist_edit_view, name='checklist_edit'),
+    path('tasks/<int:pk>/checklist/<int:item_id>/delete/', views.checklist_delete_view, name='checklist_delete'),
+    path('tasks/<int:pk>/checklist/<int:item_id>/toggle/', views.checklist_toggle_view, name='checklist_toggle'),
+    path('tasks/<int:pk>/checklist/<int:item_id>/reorder/', views.checklist_reorder_view, name='checklist_reorder'),
+    path('projects/', views.projects_view, name='projects'),
+    path('projects/<int:pk>/edit/', views.project_edit_view, name='project_edit'),
+    path('projects/<int:pk>/archive/', views.project_archive_view, name='project_archive'),
+    path('labels/', views.labels_view, name='labels'),
+    path('labels/<int:pk>/edit/', views.label_edit_view, name='label_edit'),
+    path('labels/<int:pk>/delete/', views.label_delete_view, name='label_delete'),
 ]

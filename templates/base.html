@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>{% block title %}Dashboard{% endblock %} - TaskFlow SaaS</title>
+  {% include "_theme_init.html" %}
 
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,7 +21,7 @@
   <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.min.css" rel="stylesheet">
 
   <!-- Custom Theme -->
-  <link rel="stylesheet" href="{% static 'css/taskflow.css' %}">
+  <link rel="stylesheet" href="{% static 'css/taskflow.css' %}?v=calendar-command-dark-v2">
   {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -48,6 +49,10 @@
           <i class="bi bi-layout-three-columns"></i>
           <span>Kanban Board</span>
         </a>
+        <a href="{% url 'task_calendar' %}" class="sidebar-link {% if request.resolver_match.url_name == 'task_calendar' %}active{% endif %}">
+          <i class="bi bi-calendar3"></i>
+          <span>Calendar</span>
+        </a>
         {% if user.is_admin_role %}
         <a href="{% url 'task_list' %}" class="sidebar-link {% if request.resolver_match.url_name == 'task_list' and not request.GET.assigned_to %}active{% endif %}">
           <i class="bi bi-check2-square"></i>
@@ -64,17 +69,33 @@
         </a>
         {% endif %}
 
+        {% if user.is_admin_role %}
         <div class="sidebar-category">Analytics & Reports</div>
         <a href="{% url 'analytics_dashboard' %}" class="sidebar-link {% if request.resolver_match.url_name == 'analytics_dashboard' %}active{% endif %}">
           <i class="bi bi-bar-chart-line-fill"></i>
-          <span>Workload & Metrics</span>
+          <span>Workload &amp; Metrics</span>
         </a>
+        {% else %}
+        <div class="sidebar-category">Analytics & Reports</div>
+        <a href="{% url 'my_analytics' %}" class="sidebar-link {% if request.resolver_match.url_name == 'my_analytics' %}active{% endif %}">
+          <i class="bi bi-bar-chart-line-fill"></i>
+          <span>My Analytics</span>
+        </a>
+        {% endif %}
 
         {% if user.is_admin_role %}
         <div class="sidebar-category">Administration</div>
         <a href="{% url 'user_management' %}" class="sidebar-link {% if request.resolver_match.url_name == 'user_management' %}active{% endif %}">
           <i class="bi bi-people-fill"></i>
           <span>Team Members</span>
+        </a>
+        <a href="{% url 'projects' %}" class="sidebar-link {% if request.resolver_match.url_name == 'projects' or request.resolver_match.url_name == 'project_edit' %}active{% endif %}">
+          <i class="bi bi-folder2-open"></i>
+          <span>Projects</span>
+        </a>
+        <a href="{% url 'labels' %}" class="sidebar-link {% if request.resolver_match.url_name == 'labels' or request.resolver_match.url_name == 'label_edit' %}active{% endif %}">
+          <i class="bi bi-tags-fill"></i>
+          <span>Labels</span>
         </a>
         {% endif %}
 
@@ -101,7 +122,7 @@
             </div>
             <div class="text-truncate">
               <div class="text-white small fw-bold text-truncate">{{ user.display_name }}</div>
-              <div class="text-muted" style="font-size: 0.72rem;">{{ user.get_role_display }}</div>
+              <div class="text-white" style="font-size: 0.72rem;">{{ user.get_role_display }}</div>
             </div>
           </div>
           <a href="{% url 'logout' %}" class="text-muted hover-white p-1" title="Sign out">
@@ -116,7 +137,7 @@
       <!-- Topbar -->
       <header class="app-topbar">
         <div class="d-flex align-items-center gap-3">
-          <button class="btn btn-sm btn-outline-secondary d-lg-none" id="sidebarToggle" type="button" aria-label="Toggle Navigation">
+          <button class="btn btn-sm btn-outline-secondary d-xl-none" id="sidebarToggle" type="button" aria-label="Toggle Navigation">
             <i class="bi bi-list fs-5"></i>
           </button>
           <form class="topbar-search-form d-none d-sm-block" action="{% url 'task_list' %}" method="GET">
@@ -128,6 +149,16 @@
         </div>
 
         <div class="topbar-actions">
+          <button type="button" class="icon-btn theme-toggle" data-theme-toggle aria-pressed="false">
+            <i class="bi bi-moon-stars-fill" aria-hidden="true"></i>
+            <span class="visually-hidden">Switch to dark mode</span>
+          </button>
+          <button type="button" class="icon-btn shortcut-help-trigger" data-bs-toggle="modal" data-bs-target="#shortcutsHelp" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+            <i class="bi bi-question-lg" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="icon-btn command-palette-trigger" data-bs-toggle="modal" data-bs-target="#commandPalette" aria-label="Search tasks and pages" title="Search (Ctrl+K)">
+            <i class="bi bi-search" aria-hidden="true"></i>
+          </button>
           {% if user.is_admin_role %}
           <button type="button" class="btn btn-primary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#quickNewTaskModal">
             <i class="bi bi-plus-lg"></i>
@@ -229,6 +260,49 @@
     </div>
   </div>
 
+  <div class="modal fade" id="commandPalette" tabindex="-1" aria-labelledby="commandPaletteTitle"
+       aria-hidden="true" data-search-url="{% url 'task_palette_search' %}" data-is-admin="{{ user.is_admin_role|yesno:'true,false' }}">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content command-palette">
+        <div class="modal-header border-bottom">
+          <h2 class="modal-title fs-5 fw-bold" id="commandPaletteTitle">Quick search</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close search"></button>
+        </div>
+        <div class="p-3 border-bottom">
+          <label class="visually-hidden" for="commandPaletteInput">Search tasks and pages</label>
+          <input id="commandPaletteInput" type="search" class="form-control form-control-lg"
+                 placeholder="Search tasks or jump to a page..." autocomplete="off"
+                 aria-controls="commandPaletteResults" aria-autocomplete="list">
+        </div>
+        <div id="commandPaletteResults" class="command-palette-results" role="listbox" aria-label="Search results" aria-live="polite"></div>
+        <div class="modal-footer justify-content-between small text-muted">
+          <span>Use ↑ ↓ to navigate, Enter to open, Esc to close</span>
+          <span>Ctrl K</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="shortcutsHelp" tabindex="-1" aria-labelledby="shortcutsHelpTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title fs-5 fw-bold" id="shortcutsHelpTitle">Keyboard shortcuts</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close shortcuts"></button>
+        </div>
+        <div class="modal-body">
+          <dl class="shortcut-list mb-0">
+            <div><dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>K</kbd></dt><dd>Open quick search</dd></div>
+            <div><dt><kbd>?</kbd></dt><dd>Show this help</dd></div>
+            <div><dt><kbd>G</kbd>, <kbd>D</kbd></dt><dd>Go to dashboard</dd></div>
+            <div><dt><kbd>G</kbd>, <kbd>K</kbd></dt><dd>Go to Kanban</dd></div>
+            {% if user.is_admin_role %}<div><dt><kbd>N</kbd></dt><dd>Create a new task</dd></div>{% endif %}
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
   {% if user.is_admin_role %}
   <!-- Quick New Task Modal -->
   <div class="modal fade" id="quickNewTaskModal" tabindex="-1" aria-labelledby="quickNewTaskModalLabel" aria-hidden="true">
@@ -287,6 +361,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script src="{% static 'js/theme.js' %}" defer></script>
   <script src="{% static 'js/taskflow.js' %}"></script>
   {% block extra_js %}{% endblock %}
 </body>

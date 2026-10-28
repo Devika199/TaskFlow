@@ -54,7 +54,7 @@ class ApiTests(APITestCase):
         self.assertEqual(response.data['results'][0]['status'], 'TODO')
 
     def test_create_task_via_api(self):
-        self.client.force_authenticate(user=self.member)
+        self.client.force_authenticate(user=self.admin)
         payload = {
             'title': 'Created from API',
             'description': 'REST API creation test',
@@ -65,7 +65,7 @@ class ApiTests(APITestCase):
         response = self.client.post('/api/v1/tasks/', payload)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['title'], 'Created from API')
-        self.assertEqual(response.data['created_by']['username'], 'api_member')
+        self.assertEqual(response.data['created_by']['username'], 'api_admin')
 
     def test_kanban_update_status_action(self):
         self.client.force_authenticate(user=self.member)
