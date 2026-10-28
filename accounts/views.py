@@ -142,3 +142,8 @@ def toggle_user_active_view(request, user_id):
     status_str = "activated" if target_user.is_active else "deactivated"
     messages.success(request, f"User {target_user.username} has been {status_str}.")
     return redirect('user_management')
+
+
+#
+# set ADMIN_REGISTRATION_CODE=CjxkFEb3MCug9jwJwxirWQ
+# python manage.py runserver

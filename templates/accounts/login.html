@@ -3,386 +3,92 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="TaskFlow - Enterprise SaaS Task Management &amp; Collaboration Platform">
-  <title>Sign In &bull; TaskFlow</title>
-
-  <!-- Google Fonts: Inter -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sign in to your TaskFlow workspace.">
+  <title>Sign in | TaskFlow</title>
+  {% include "_theme_init.html" %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
-  <!-- Bootstrap 5.3 & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'css/taskflow.css' %}">
-
-  <style>
-    :root {
-      --tf-login-bg: #0b0f19;
-      --tf-login-surface: #111827;
-      --tf-login-accent: #4f46e5;
-    }
-
-    body {
-      background-color: #f8fafc;
-      color: #1e293b;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      margin: 0;
-    }
-
-    .login-container {
-      width: 100%;
-      min-height: 100vh;
-      display: flex;
-    }
-
-    /* Left Brand Showcase Column */
-    .brand-side {
-      background: linear-gradient(145deg, #0f172a 0%, #1e1b4b 60%, #0f172a 100%);
-      color: #ffffff;
-      padding: 4rem 4.5rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .brand-side::before {
-      content: "";
-      position: absolute;
-      top: -30%;
-      right: -20%;
-      width: 500px;
-      height: 500px;
-      background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0) 70%);
-      pointer-events: none;
-    }
-
-    .feature-point {
-      display: flex;
-      gap: 1rem;
-      align-items: flex-start;
-      margin-bottom: 1.75rem;
-    }
-
-    .feature-point-icon {
-      width: 42px;
-      height: 42px;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      color: #818cf8;
-      flex-shrink: 0;
-    }
-
-    /* Right Auth Form Column */
-    .form-side {
-      background-color: #ffffff;
-      padding: 3rem 4rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      width: 100%;
-      max-width: 580px;
-      margin: auto;
-    }
-
-    @media (max-width: 992px) {
-      .brand-side {
-        display: none !important;
-      }
-      .form-side {
-        padding: 2.5rem 1.5rem;
-        max-width: 480px;
-      }
-    }
-
-    .form-control:focus, .form-check-input:focus {
-      border-color: #6366f1;
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-    }
-
-    .password-toggle-btn {
-      cursor: pointer;
-      border-left: none;
-      background-color: #f8fafc;
-      transition: var(--tf-transition);
-    }
-
-    .password-toggle-btn:hover {
-      background-color: #f1f5f9;
-      color: #4f46e5;
-    }
-
-    .demo-pill-btn {
-      font-size: 0.8rem;
-      padding: 0.35rem 0.65rem;
-      border-radius: 6px;
-      transition: all 0.15s ease-in-out;
-    }
-  </style>
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}">
 </head>
-<body>
+<body class="auth-page">
+  <main class="auth-layout">
+    {% include "accounts/_brand_panel.html" %}
 
-  <div class="login-container">
-    <!-- Left Hero Column (Desktop) -->
-    <div class="brand-side col-lg-6 col-xl-7 d-none d-lg-flex">
-      <div>
-        <div class="d-flex align-items-center gap-3 mb-4">
-          <div class="brand-logo-icon" style="width: 44px; height: 44px; font-size: 1.35rem;">
-            <i class="bi bi-kanban-fill"></i>
-          </div>
-          <span class="fs-4 fw-bold tracking-tight text-white">TaskFlow</span>
-        </div>
-        <div class="badge bg-indigo-subtle text-indigo px-3 py-1 rounded-pill mb-3 border border-indigo-subtle" style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border-color: rgba(99, 102, 241, 0.3);">
-          Enterprise Sprint &amp; Workload Platform
-        </div>
-        <h1 class="display-6 fw-bold mb-3" style="line-height: 1.25; letter-spacing: -0.02em;">
-          Precision task orchestration for high-velocity teams.
-        </h1>
-        <p class="text-slate-300 lead mb-5" style="color: #cbd5e1; font-size: 1.05rem;">
-          Collaborate seamlessly with real-time Kanban transitions, rigorous server-side role governance, threaded team discussions, and workload visibility.
-        </p>
+    <section class="auth-panel" aria-labelledby="auth-heading">
+      <div class="auth-form-wrap">
+        <a class="auth-mobile-brand" href="{% url 'landing' %}" aria-label="TaskFlow home">
+          <span class="auth-logo"><i class="bi bi-kanban-fill" aria-hidden="true"></i></span>
+          <span>TaskFlow</span>
+        </a>
+        <button type="button" class="auth-theme-toggle" data-theme-toggle aria-pressed="false">
+          <i class="bi bi-moon-stars-fill" aria-hidden="true"></i>
+          <span class="visually-hidden">Switch to dark mode</span>
+        </button>
 
-        <!-- Feature Points -->
-        <div class="feature-point">
-          <div class="feature-point-icon">
-            <i class="bi bi-shield-check"></i>
-          </div>
-          <div>
-            <h6 class="fw-semibold text-white mb-1">Strict Role-Based Access Control</h6>
-            <p class="small mb-0" style="color: #94a3b8;">
-              Server-enforced boundaries between Administrators and Members for creation, modification, and project governance.
-            </p>
-          </div>
+        <div class="auth-heading">
+          <span class="auth-eyebrow">YOUR WORKSPACE AWAITS</span>
+          <h1 id="auth-heading">Welcome back</h1>
+          <p>Sign in to pick up where your team left off.</p>
         </div>
 
-        <div class="feature-point">
-          <div class="feature-point-icon">
-            <i class="bi bi-layout-three-columns"></i>
-          </div>
-          <div>
-            <h6 class="fw-semibold text-white mb-1">Reactive Kanban Workflow</h6>
-            <p class="small mb-0" style="color: #94a3b8;">
-              Optimistic HTML5 drag-and-drop progression with error rollback, dynamic counters, and live status synchronization.
-            </p>
-          </div>
-        </div>
-
-        <div class="feature-point">
-          <div class="feature-point-icon">
-            <i class="bi bi-bar-chart-line"></i>
-          </div>
-          <div>
-            <h6 class="fw-semibold text-white mb-1">Capacity &amp; Bottleneck Analytics</h6>
-            <p class="small mb-0" style="color: #94a3b8;">
-              Real-time member workload distribution matrix, overdue deadline tracking, and sprint velocity metrics.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="d-flex align-items-center justify-content-between pt-4 border-top border-secondary border-opacity-25 small" style="color: #64748b;">
-        <span>TaskFlow Enterprise v2.4</span>
-        <span class="d-flex align-items-center gap-2">
-          <i class="bi bi-lock-fill text-success"></i> CSRF &amp; Session Guarded
-        </span>
-      </div>
-    </div>
-
-    <!-- Right Authentication Form Column -->
-    <div class="form-side col-12 col-lg-6 col-xl-5">
-      <div class="w-100">
-        <!-- Mobile Brand Logo -->
-        <div class="d-flex align-items-center gap-2 mb-4 d-lg-none">
-          <div class="brand-logo-icon" style="width: 38px; height: 38px; font-size: 1.15rem;">
-            <i class="bi bi-kanban-fill"></i>
-          </div>
-          <span class="fs-4 fw-bold text-dark">TaskFlow</span>
-        </div>
-
-        <div class="mb-4">
-          <h2 class="fw-bold text-dark mb-1" style="letter-spacing: -0.02em;">Welcome back</h2>
-          <p class="text-muted small">Please authenticate with your credentials to access your workspace.</p>
-        </div>
-
-        <!-- Alert Error Messages -->
         {% if messages %}
           {% for message in messages %}
-          <div class="alert alert-{{ message.tags }} alert-dismissible fade show small py-2 px-3 mb-3 d-flex align-items-center gap-2" role="alert">
-            <i class="bi {% if message.tags == 'danger' or message.tags == 'error' %}bi-exclamation-circle-fill text-danger{% else %}bi-info-circle-fill text-primary{% endif %}"></i>
-            <div>{{ message }}</div>
-            <button type="button" class="btn-close py-2 ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+          <div class="auth-alert alert-{{ message.tags }}" role="alert">
+            <i class="bi {% if message.tags == 'success' %}bi-check-circle-fill{% elif message.tags == 'danger' or message.tags == 'error' %}bi-exclamation-circle-fill{% else %}bi-info-circle-fill{% endif %}" aria-hidden="true"></i>
+            <span>{{ message }}</span>
           </div>
           {% endfor %}
         {% endif %}
 
         {% if form.non_field_errors %}
-          <div class="alert alert-danger small py-2 px-3 mb-3 d-flex align-items-center gap-2" role="alert">
-            <i class="bi bi-shield-slash-fill text-danger"></i>
-            <div>{{ form.non_field_errors.0 }}</div>
-          </div>
+        <div class="auth-alert alert-danger" role="alert">
+          <i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i>
+          <div>{{ form.non_field_errors }}</div>
+        </div>
         {% endif %}
 
-        <form method="POST" id="authLoginForm" novalidate>
+        <form method="post" class="auth-form" id="loginForm">
           {% csrf_token %}
-          <div class="mb-3">
-            <label for="usernameInput" class="form-label fw-semibold small text-secondary">Username or Email</label>
-            <div class="input-group">
-              <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-person"></i></span>
-              <input
-                type="text"
-                name="username"
-                id="usernameInput"
-                class="form-control bg-light border-start-0"
-                placeholder="name@company.com or username"
-                required
-                autocomplete="username"
-                autofocus
-              >
+          <div class="auth-field {% if form.username.errors %}has-error{% endif %}">
+            <label for="{{ form.username.id_for_label }}">Email or username</label>
+            <div class="auth-input-wrap">
+              <i class="bi bi-person" aria-hidden="true"></i>
+              {{ form.username }}
             </div>
+            <div class="auth-error" id="username-error" aria-live="polite">{{ form.username.errors }}</div>
           </div>
 
-          <div class="mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <label for="passwordInput" class="form-label fw-semibold small text-secondary mb-0">Password</label>
-            </div>
-            <div class="input-group">
-              <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-key"></i></span>
-              <input
-                type="password"
-                name="password"
-                id="passwordInput"
-                class="form-control bg-light border-start-0 border-end-0"
-                placeholder="••••••••••••"
-                required
-                autocomplete="current-password"
-              >
-              <button
-                type="button"
-                class="btn input-group-text password-toggle-btn text-muted"
-                id="togglePasswordBtn"
-                aria-label="Show password"
-                title="Toggle password visibility"
-              >
-                <i class="bi bi-eye" id="passwordIcon"></i>
+          <div class="auth-field {% if form.password.errors %}has-error{% endif %}">
+            <label for="{{ form.password.id_for_label }}">Password</label>
+            <div class="auth-input-wrap">
+              <i class="bi bi-lock" aria-hidden="true"></i>
+              {{ form.password }}
+              <button class="password-toggle" type="button" data-password-toggle="id_password" aria-label="Show password" aria-pressed="false">
+                <i class="bi bi-eye" aria-hidden="true"></i>
               </button>
             </div>
+            <div class="auth-error" id="password-error" aria-live="polite">{{ form.password.errors }}</div>
           </div>
 
-          <div class="d-flex justify-content-between align-items-center mb-4">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="remember_me" id="rememberMe">
-              <label class="form-check-label small text-muted" for="rememberMe">
-                Remember this device
-              </label>
-            </div>
-          </div>
-
-          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm" id="submitLoginBtn">
-            <span id="btnText">Sign In to Workspace</span>
-            <span id="btnSpinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+          <button class="auth-submit" type="submit">
+            <span class="submit-label">Sign in</span>
+            <span class="submit-spinner" aria-hidden="true"></span>
+            <i class="bi bi-arrow-right" aria-hidden="true"></i>
           </button>
         </form>
 
-        <!-- Instant Assessment Profiles -->
-        <div class="mt-4 pt-3 border-top">
-          <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="small fw-bold text-uppercase text-muted" style="font-size: 0.7rem; letter-spacing: 0.05em;">
-              ⚡ Evaluation Demo Logins
-            </span>
-            <span class="badge bg-light text-secondary border small" style="font-size: 0.65rem;">1-Click Fill</span>
-          </div>
-
-          <div class="d-flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="btn btn-outline-primary btn-sm demo-pill-btn flex-grow-1"
-              onclick="autofillAndSubmit('alex.admin', 'password123')"
-              title="Sign in with Administrator Privileges"
-            >
-              <i class="bi bi-shield-lock-fill me-1"></i><strong>Admin</strong> (Alex Rivers)
-            </button>
-            <button
-              type="button"
-              class="btn btn-outline-info btn-sm demo-pill-btn flex-grow-1 text-dark"
-              onclick="autofillAndSubmit('sarah.tech', 'password123')"
-              title="Sign in with Member Role (Backend Lead)"
-            >
-              <i class="bi bi-person-fill me-1"></i><strong>Member</strong> (Sarah Chen)
-            </button>
-            <button
-              type="button"
-              class="btn btn-outline-success btn-sm demo-pill-btn flex-grow-1 text-dark"
-              onclick="autofillAndSubmit('marcus.ui', 'password123')"
-              title="Sign in with Member Role (Frontend Architect)"
-            >
-              <i class="bi bi-person-fill me-1"></i><strong>Member</strong> (Marcus Vance)
-            </button>
-          </div>
-        </div>
-
-        <div class="text-center mt-4 pt-2">
-          <span class="text-muted small">New to TaskFlow?</span>
-          <a href="{% url 'register' %}" class="small fw-semibold text-primary text-decoration-none ms-1">Create an account</a>
-        </div>
+        <p class="auth-switch">
+          New to TaskFlow? <a href="{% url 'register' %}">Create an account</a>
+        </p>
+        <p class="auth-security"><i class="bi bi-shield-check" aria-hidden="true"></i> Your workspace is protected with secure sign-in.</p>
       </div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    // Show/Hide password toggle logic
-    const togglePasswordBtn = document.getElementById('togglePasswordBtn');
-    const passwordInput = document.getElementById('passwordInput');
-    const passwordIcon = document.getElementById('passwordIcon');
-
-    if (togglePasswordBtn && passwordInput && passwordIcon) {
-      togglePasswordBtn.addEventListener('click', () => {
-        const isPassword = passwordInput.getAttribute('type') === 'password';
-        passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
-        passwordIcon.className = isPassword ? 'bi bi-eye-slash text-primary' : 'bi bi-eye text-muted';
-        togglePasswordBtn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
-      });
-    }
-
-    // Loading / Disabled state on submission
-    const loginForm = document.getElementById('authLoginForm');
-    const submitBtn = document.getElementById('submitLoginBtn');
-    const btnText = document.getElementById('btnText');
-    const btnSpinner = document.getElementById('btnSpinner');
-
-    if (loginForm && submitBtn) {
-      loginForm.addEventListener('submit', () => {
-        submitBtn.disabled = true;
-        btnText.textContent = 'Authenticating...';
-        btnSpinner.classList.remove('d-none');
-      });
-    }
-
-    // 1-Click Autofill & Submit for assessment evaluation
-    function autofillAndSubmit(username, password) {
-      const uInput = document.getElementById('usernameInput');
-      const pInput = document.getElementById('passwordInput');
-      if (uInput && pInput && loginForm) {
-        uInput.value = username;
-        pInput.value = password;
-        submitBtn.disabled = true;
-        btnText.textContent = 'Authenticating...';
-        btnSpinner.classList.remove('d-none');
-        loginForm.submit();
-      }
-    }
-  </script>
+    </section>
+  </main>
+  <script src="{% static 'js/auth.js' %}" defer></script>
+  <script src="{% static 'js/theme.js' %}" defer></script>
 </body>
 </html>
