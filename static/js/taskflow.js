@@ -133,16 +133,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const paletteModal = palette && window.bootstrap
     ? bootstrap.Modal.getOrCreateInstance(palette)
     : null;
-  const shortcutsHelp = document.getElementById('shortcutsHelp');
   let searchController = null;
   let selectedResult = 0;
-  let groupShortcutAt = 0;
   const isAdmin = palette?.dataset.isAdmin === 'true';
+  const pageUrls = document.body.dataset;
   const commandPages = [
-    { title: 'Dashboard', url: '/dashboard/', icon: 'bi-grid-1x2-fill', keywords: 'home overview' },
-    { title: 'Kanban Board', url: '/kanban/', icon: 'bi-kanban', keywords: 'board workflow' },
-    { title: 'Calendar', url: '/calendar/', icon: 'bi-calendar3', keywords: 'due dates schedule' },
-    { title: 'My Tasks', url: '/tasks/', icon: 'bi-check2-square', keywords: 'task list' }
+    { title: 'Dashboard', url: pageUrls.dashboardUrl, icon: 'bi-grid-1x2-fill', keywords: 'home overview' },
+    { title: 'Kanban Board', url: pageUrls.kanbanUrl, icon: 'bi-kanban', keywords: 'board workflow' },
+    { title: 'Calendar', url: pageUrls.calendarUrl, icon: 'bi-calendar3', keywords: 'due dates schedule' },
+    { title: 'My Tasks', url: pageUrls.taskListUrl, icon: 'bi-check2-square', keywords: 'task list' }
   ];
 
   const activateSelectedResult = () => {
@@ -208,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (quickModal && window.bootstrap) {
           window.bootstrap.Modal.getOrCreateInstance(quickModal).show();
         } else {
-          window.location.href = '/tasks/create/';
+          window.location.href = pageUrls.taskCreateUrl;
         }
       });
     }
@@ -271,41 +270,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  document.addEventListener('keydown', (event) => {
-    const target = event.target;
-    const editingText = target instanceof HTMLElement
-      && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-      if (paletteModal) {
-        event.preventDefault();
-        paletteModal.show();
-      }
-      return;
-    }
-    if (editingText || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key === '?' && shortcutsHelp) {
-      event.preventDefault();
-      window.bootstrap.Modal.getOrCreateInstance(shortcutsHelp).show();
-      return;
-    }
-    const now = Date.now();
-    if (event.key.toLowerCase() === 'g') {
-      groupShortcutAt = now;
-      return;
-    }
-    if (now - groupShortcutAt < 1200) {
-      if (event.key.toLowerCase() === 'd') window.location.href = '/dashboard/';
-      if (event.key.toLowerCase() === 'k') window.location.href = '/kanban/';
-      groupShortcutAt = 0;
-      return;
-    }
-    if (isAdmin && event.key.toLowerCase() === 'n') {
-      const quickModal = document.getElementById('quickNewTaskModal');
-      if (quickModal && window.bootstrap) {
-        window.bootstrap.Modal.getOrCreateInstance(quickModal).show();
-      } else {
-        window.location.href = '/tasks/create/';
-      }
-    }
-  });
 });

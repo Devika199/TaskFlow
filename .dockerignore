@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+
+# Local databases & backups
+*.sqlite3
+*.sqlite3*
+*.backup*
+db.sqlite3
+db.sqlite3*
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Static build & test artifacts
+staticfiles/
+staticfiles
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+
+# IDE & Editor folders
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.cursorrules
+

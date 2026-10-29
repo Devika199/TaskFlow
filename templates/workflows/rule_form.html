@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - TaskFlow SaaS{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9 col-xl-8">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div>
+        <a href="{% url 'workflow_rule_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+          <i class="bi bi-arrow-left me-1"></i>Back to Workflows
+        </a>
+        <h3 class="fw-bold mb-0">{{ title }}</h3>
+        <p class="text-muted small mb-0">Configure event triggers, filtering criteria, and automated actions for {{ active_organization.name }}.</p>
+      </div>
+    </div>
+
+    <form method="POST" novalidate>
+      {% csrf_token %}
+
+      <!-- Basic Settings Card -->
+      <div class="card-saas p-4 mb-4">
+        <h5 class="fw-bold mb-3 border-bottom pb-2">
+          <i class="bi bi-sliders me-2 text-primary"></i>1. Rule Details &amp; Event Trigger
+        </h5>
+
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger py-2 small">
+          {% for error in form.non_field_errors %}
+          <div>{{ error }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold" for="{{ form.name.id_for_label }}">Rule Name <span class="text-danger">*</span></label>
+          {{ form.name }}
+          {% if form.name.errors %}
+          <div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold" for="{{ form.description.id_for_label }}">Description</label>
+          {{ form.description }}
+          {% if form.description.errors %}
+          <div class="text-danger small mt-1">{{ form.description.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-8">
+            <label class="form-label fw-semibold" for="{{ form.trigger_type.id_for_label }}">Event Trigger <span class="text-danger">*</span></label>
+            {{ form.trigger_type }}
+            <div class="form-text small">When this event occurs in {{ active_organization.name }}, the rule will evaluate conditions.</div>
+            {% if form.trigger_type.errors %}
+            <div class="text-danger small mt-1">{{ form.trigger_type.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="col-md-4 d-flex align-items-center mt-md-4">
+            <div class="form-check form-switch pt-2">
+              {{ form.is_enabled }}
+              <label class="form-check-label fw-semibold ms-2" for="{{ form.is_enabled.id_for_label }}">Enable Rule</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Condition Criteria Card -->
+      <div class="card-saas p-4 mb-4">
+        <h5 class="fw-bold mb-3 border-bottom pb-2">
+          <i class="bi bi-funnel-fill me-2 text-primary"></i>2. Filter Conditions (Optional)
+        </h5>
+        <p class="text-muted small">Only tasks matching ALL configured criteria will trigger the actions. Leave fields set to "Any" to match all tasks.</p>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">{{ form.condition_status.label }}</label>
+            {{ form.condition_status }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">{{ form.condition_priority.label }}</label>
+            {{ form.condition_priority }}
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">{{ form.condition_project.label }}</label>
+            {{ form.condition_project }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">{{ form.condition_assignee.label }}</label>
+            {{ form.condition_assignee }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Configuration Card -->
+      <div class="card-saas p-4 mb-4">
+        <h5 class="fw-bold mb-3 border-bottom pb-2">
+          <i class="bi bi-lightning-charge-fill me-2 text-primary"></i>3. Automated Action
+        </h5>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">{{ form.action_type.label }} <span class="text-danger">*</span></label>
+          {{ form.action_type }}
+        </div>
+
+        <!-- Notification action fields -->
+        <div id="notificationActionFields" class="p-3 bg-light rounded-3 mb-3 border">
+          <h6 class="fw-bold text-dark mb-2"><i class="bi bi-bell-fill text-primary me-1"></i>Notification Settings</h6>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">{{ form.action_recipient.label }}</label>
+            {{ form.action_recipient }}
+          </div>
+          <div>
+            <label class="form-label fw-semibold">{{ form.action_message.label }}</label>
+            {{ form.action_message }}
+            <div class="form-text small">Use <code>{title}</code> or <code>{rule_name}</code> placeholders. Leave blank for default alert.</div>
+          </div>
+        </div>
+
+        <!-- Field update action fields -->
+        <div id="fieldUpdateActionFields" class="p-3 bg-light rounded-3 mb-3 border d-none">
+          <h6 class="fw-bold text-dark mb-2"><i class="bi bi-pencil-square text-success me-1"></i>Field Update Settings</h6>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">{{ form.action_target_status.label }}</label>
+              {{ form.action_target_status }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">{{ form.action_target_priority.label }}</label>
+              {{ form.action_target_priority }}
+            </div>
+          </div>
+          {% if form.action_target_status.errors %}
+          <div class="text-danger small mt-2">{{ form.action_target_status.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <!-- Audit log notice -->
+        <div id="auditLogNotice" class="p-3 bg-light rounded-3 mb-3 border d-none">
+          <div class="text-muted small">
+            <i class="bi bi-info-circle-fill text-info me-1"></i>
+            This rule will record an immutable task activity audit log whenever triggered.
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center">
+        <a href="{% url 'workflow_rule_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-check-lg me-1"></i>{{ action_label }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const actionTypeSelect = document.getElementById('id_action_type');
+  const notifBox = document.getElementById('notificationActionFields');
+  const updateBox = document.getElementById('fieldUpdateActionFields');
+  const auditBox = document.getElementById('auditLogNotice');
+
+  function updateActionVisibility() {
+    const val = actionTypeSelect ? actionTypeSelect.value : '';
+    if (notifBox) notifBox.classList.toggle('d-none', val !== 'CREATE_NOTIFICATION');
+    if (updateBox) updateBox.classList.toggle('d-none', val !== 'UPDATE_TASK_FIELD');
+    if (auditBox) auditBox.classList.toggle('d-none', val !== 'LOG_AUDIT');
+  }
+
+  if (actionTypeSelect) {
+    actionTypeSelect.addEventListener('change', updateActionVisibility);
+    updateActionVisibility();
+  }
+});
+</script>
+{% endblock %}
+

@@ -65,14 +65,25 @@
 
           <div class="row g-3 mb-4">
             <div class="col-md-6">
-              <label class="form-label fw-semibold" for="{{ form.project.id_for_label }}">Project</label>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label fw-semibold mb-0" for="{{ form.project.id_for_label }}">Project</label>
+                {% if user.is_admin_role %}
+                <a href="{% url 'projects' %}" target="_blank" class="small text-decoration-none" title="Create or manage projects"><i class="bi bi-folder-plus me-1"></i>Manage Projects</a>
+                {% endif %}
+              </div>
               {{ form.project }}
+              <div id="project-help" class="form-text">Assign to a project or leave empty for no project.</div>
               {% if form.project.errors %}<div class="text-danger small mt-1">{{ form.project.errors.0 }}</div>{% endif %}
             </div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold" for="{{ form.labels.id_for_label }}">Labels</label>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label fw-semibold mb-0" for="{{ form.labels.id_for_label }}">Labels</label>
+                {% if user.is_admin_role %}
+                <a href="{% url 'labels' %}" target="_blank" class="small text-decoration-none" title="Create or manage labels"><i class="bi bi-tag me-1"></i>Manage Labels</a>
+                {% endif %}
+              </div>
               {{ form.labels }}
-              <div id="labels-help" class="form-text">Select one or more labels.</div>
+              <div id="labels-help" class="form-text">Hold <kbd class="px-1 py-0 bg-light border text-dark">Ctrl</kbd> (or <kbd class="px-1 py-0 bg-light border text-dark">⌘</kbd> on Mac) to select multiple.</div>
               {% if form.labels.errors %}<div class="text-danger small mt-1">{{ form.labels.errors.0 }}</div>{% endif %}
             </div>
           </div>

@@ -1,4 +1,3 @@
-
 __pycache__/
 *.py[cod]
 *.log
@@ -9,6 +8,10 @@ env/
 .env.*
 !.env.example
 db.sqlite3
+db.sqlite3*
+*.backup*
+staticfiles/
+staticfiles
 .vscode/
 .idea/
 .DS_Store

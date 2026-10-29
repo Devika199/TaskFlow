@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from rest_framework import serializers
 from notifications.models import Notification
 from tasks.models import (
@@ -31,11 +32,17 @@ class TaskCommentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'author', 'created_at', 'updated_at']
 
     def validate(self, attrs):
+        request = self.context.get('request')
+        org = getattr(request, 'organization', None) if request else None
         task = attrs.get('task', self.instance.task if self.instance else None)
         parent = attrs.get('parent', self.instance.parent if self.instance else None)
         if parent and task and parent.task_id != task.id:
             raise serializers.ValidationError({
                 'parent': 'Replies must belong to the same task as the comment.'
+            })
+        if org and task and getattr(task, 'organization_id', None) != org.id:
+            raise serializers.ValidationError({
+                'task': 'Task does not belong to the active organization.'
             })
         return attrs
 
@@ -82,6 +89,39 @@ class TaskSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'completed_at', 'created_by', 'created_at', 'updated_at']
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        org = getattr(request, 'organization', None) if request else None
+        if org:
+            self.fields['project'].queryset = Project.objects.filter(organization=org)
+            self.fields['labels'].queryset = Label.objects.filter(organization=org)
+            self.fields['assigned_to'].queryset = User.objects.filter(
+                Q(organization_memberships__organization=org, organization_memberships__is_active=True)
+                | Q(organization_memberships__isnull=True),
+                is_active=True,
+            ).distinct()
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        org = getattr(request, 'organization', None) if request else None
+        if org:
+            project = attrs.get('project')
+            if project and getattr(project, 'organization_id', None) != org.id:
+                raise serializers.ValidationError({'project': 'Project does not belong to the active organization.'})
+            labels = attrs.get('labels')
+            if labels:
+                for label in labels:
+                    if getattr(label, 'organization_id', None) != org.id:
+                        raise serializers.ValidationError({'labels': f"Label '{label.name}' does not belong to the active organization."})
+            assigned_to = attrs.get('assigned_to')
+            if assigned_to:
+                from tasks.models import _get_user_org_cache
+                active_ids, _, has_any = _get_user_org_cache(assigned_to)
+                if has_any and org.id not in active_ids:
+                    raise serializers.ValidationError({'assigned_to': 'Assignee is not an active member of the active organization.'})
+        return attrs
+
     def validate_project(self, project):
         if project and project.archived and (
             self.instance is None or self.instance.project_id != project.pk
@@ -124,7 +164,11 @@ class TaskChecklistItemStatusSerializer(serializers.ModelSerializer):
 
 class ProjectSerializer(serializers.ModelSerializer):
     def validate_name(self, name):
+        request = self.context.get('request')
+        org = getattr(request, 'organization', None) if request else None
         projects = Project.objects.filter(name__iexact=name.strip())
+        if org:
+            projects = projects.filter(organization=org)
         if self.instance:
             projects = projects.exclude(pk=self.instance.pk)
         if projects.exists():
@@ -139,7 +183,11 @@ class ProjectSerializer(serializers.ModelSerializer):
 
 class LabelSerializer(serializers.ModelSerializer):
     def validate_name(self, name):
+        request = self.context.get('request')
+        org = getattr(request, 'organization', None) if request else None
         labels = Label.objects.filter(name__iexact=name.strip())
+        if org:
+            labels = labels.filter(organization=org)
         if self.instance:
             labels = labels.exclude(pk=self.instance.pk)
         if labels.exists():

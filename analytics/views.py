@@ -14,25 +14,33 @@ User = get_user_model()
 
 @login_required
 def analytics_dashboard_view(request):
-    if not request.user.is_admin_role:
+    org = getattr(request, 'organization', None)
+    membership = getattr(request, 'membership', None)
+    is_admin = (membership and membership.is_admin) if membership else request.user.is_admin_role
+    if not is_admin:
         raise PermissionDenied("Administrator privileges are required to view analytics.")
 
     today = timezone.now().date()
 
-    if request.user.is_admin_role:
-        tasks = Task.objects.all()
-        # Admin-only user workload breakdown
-        user_workloads = User.objects.filter(is_active=True).annotate(
-            total_assigned=Count('assigned_tasks'),
-            todo=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_TODO)),
-            in_progress=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_IN_PROGRESS)),
-            completed=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_COMPLETED)),
-            overdue=Count('assigned_tasks', filter=Q(assigned_tasks__due_date__lt=today, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS]))
-        ).order_by('-total_assigned')
-    else:
-        # Strict RBAC: Member only sees their assigned tasks analytics
-        tasks = Task.objects.filter(assigned_to=request.user)
-        user_workloads = []
+    tasks = Task.objects.all()
+    if org:
+        tasks = tasks.filter(organization=org)
+
+    users_qs = User.objects.filter(is_active=True)
+    task_filter = Q(assigned_tasks__organization=org) if org else Q()
+    if org:
+        users_qs = users_qs.filter(
+            organization_memberships__organization=org,
+            organization_memberships__is_active=True,
+        )
+
+    user_workloads = users_qs.annotate(
+        total_assigned=Count('assigned_tasks', filter=task_filter),
+        todo=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status=Task.STATUS_TODO)),
+        in_progress=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status=Task.STATUS_IN_PROGRESS)),
+        completed=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status=Task.STATUS_COMPLETED)),
+        overdue=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__due_date__lt=today, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS]))
+    ).order_by('-total_assigned')
 
     total_tasks = tasks.count()
     completed_tasks = tasks.filter(status=Task.STATUS_COMPLETED).count()
@@ -76,7 +84,10 @@ def analytics_dashboard_view(request):
 @login_required
 def my_analytics_view(request):
     today = timezone.localdate()
+    org = getattr(request, 'organization', None)
     tasks = Task.objects.filter(assigned_to=request.user)
+    if org:
+        tasks = tasks.filter(organization=org)
     active_statuses = [Task.STATUS_TODO, Task.STATUS_IN_PROGRESS]
 
     total_tasks = tasks.count()

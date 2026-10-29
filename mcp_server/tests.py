@@ -97,6 +97,10 @@ class TaskToolsTests(TestCase):
                 "create_task",
                 "update_task_status",
                 "assign_task",
+                "search_tasks",
+                "get_project_summary",
+                "get_daily_briefing",
+                "get_team_workload",
             },
         )
 
@@ -426,3 +430,191 @@ class TaskToolsTests(TestCase):
             tools.update_task_status(self.own_task.pk, "BLOCKED")
 
         self.assertFalse(Task.objects.filter(title="Bad status").exists())
+
+    def test_search_tasks_filters_visible_tasks_and_validates_filters(self):
+        project = Project.objects.create(name="Search project", created_by=self.admin)
+        self.own_task.title = "Quarterly planning notes"
+        self.own_task.project = project
+        self.own_task.save(update_fields=["title", "project", "updated_at"])
+        self.other_task.title = "Quarterly confidential plan"
+        self.other_task.save(update_fields=["title", "updated_at"])
+
+        result = self.call_tool("search_tasks", {
+            "keyword": " Quarterly ",
+            "status": Task.STATUS_TODO,
+            "priority": Task.PRIORITY_MEDIUM,
+            "due_date_from": (timezone.localdate() - timedelta(days=2)).isoformat(),
+            "due_date_to": timezone.localdate().isoformat(),
+        })
+
+        self.assertFalse(result.is_error)
+        self.assertEqual(
+            [item["id"] for item in result.structured_content["tasks"]],
+            [self.own_task.pk],
+        )
+        self.assertEqual(result.structured_content["count"], 1)
+
+        hidden = self.call_tool("search_tasks", {"keyword": "confidential"})
+        self.assertFalse(hidden.is_error)
+        self.assertEqual(hidden.structured_content["tasks"], [])
+
+        invalid_filters = (
+            {"keyword": "planning", "status": "BLOCKED"},
+            {"keyword": "planning", "priority": "URGENT"},
+            {"keyword": "planning", "due_date_from": "2025-2-3"},
+            {
+                "keyword": "planning",
+                "due_date_from": "2025-02-05",
+                "due_date_to": "2025-02-03",
+            },
+            {"keyword": "   "},
+        )
+        for arguments in invalid_filters:
+            with self.subTest(arguments=arguments):
+                invalid = self.call_tool("search_tasks", arguments)
+                self.assertTrue(invalid.is_error)
+
+    def test_project_summary_obeys_project_visibility_and_task_scope(self):
+        shared_project = Project.objects.create(
+            name="Shared visibility project",
+            created_by=self.admin,
+        )
+        self.own_task.project = shared_project
+        self.own_task.save(update_fields=["project", "updated_at"])
+        self.other_task.project = shared_project
+        self.other_task.save(update_fields=["project", "updated_at"])
+
+        member_summary = self.call_tool("get_project_summary", {
+            "project_id": shared_project.pk,
+        })
+        self.assertFalse(member_summary.is_error)
+        self.assertEqual(member_summary.structured_content["task_count"], 1)
+        self.assertEqual(member_summary.structured_content["overdue"], 1)
+        self.assertEqual(member_summary.structured_content["completion_percentage"], 0.0)
+
+        private_project = Project.objects.create(
+            name="Other member project",
+            created_by=self.admin,
+        )
+        self.other_task.project = private_project
+        self.other_task.save(update_fields=["project", "updated_at"])
+        hidden = self.call_tool("get_project_summary", {
+            "project_id": private_project.pk,
+        })
+        missing = self.call_tool("get_project_summary", {
+            "project_id": private_project.pk + 1000,
+        })
+        self.assertTrue(hidden.is_error)
+        self.assertTrue(missing.is_error)
+        self.assertEqual(hidden.content[0].text, missing.content[0].text)
+        self.assertIn("Project not found.", hidden.content[0].text)
+
+        self.other_task.project = shared_project
+        self.other_task.save(update_fields=["project", "updated_at"])
+        os.environ["TASKFLOW_MCP_USER"] = self.admin.username
+        admin_summary = self.call_tool("get_project_summary", {
+            "project_id": shared_project.pk,
+        })
+        self.assertEqual(admin_summary.structured_content["task_count"], 2)
+        self.assertEqual(admin_summary.structured_content["in_progress"], 1)
+
+    def test_daily_briefing_contains_only_configured_users_deadlines(self):
+        today = timezone.localdate()
+        due_today = Task.objects.create(
+            title="Member due today",
+            due_date=today,
+            created_by=self.admin,
+            assigned_to=self.member,
+        )
+        upcoming = Task.objects.create(
+            title="Member upcoming",
+            due_date=today + timedelta(days=5),
+            created_by=self.admin,
+            assigned_to=self.member,
+        )
+        Task.objects.create(
+            title="Other member due today",
+            due_date=today,
+            created_by=self.admin,
+            assigned_to=self.other_member,
+        )
+        Task.objects.create(
+            title="Completed old task",
+            due_date=today - timedelta(days=3),
+            status=Task.STATUS_COMPLETED,
+            created_by=self.admin,
+            assigned_to=self.member,
+        )
+
+        briefing = self.call_tool("get_daily_briefing")
+
+        self.assertFalse(briefing.is_error)
+        data = briefing.structured_content
+        self.assertEqual(data["date"], today.isoformat())
+        self.assertEqual(data["upcoming_through"], (today + timedelta(days=7)).isoformat())
+        self.assertEqual(data["due_today_count"], 1)
+        self.assertEqual(data["due_today"][0]["id"], due_today.pk)
+        self.assertEqual(data["overdue_count"], 1)
+        self.assertEqual(data["overdue"][0]["id"], self.own_task.pk)
+        self.assertEqual(data["upcoming_count"], 1)
+        self.assertEqual(data["upcoming"][0]["id"], upcoming.pk)
+        returned_ids = {
+            task["id"]
+            for group in ("due_today", "overdue", "upcoming")
+            for task in data[group]
+        }
+        self.assertNotIn(self.other_task.pk, returned_ids)
+
+    def test_team_workload_is_admin_only_and_returns_aggregates(self):
+        denied = self.call_tool("get_team_workload")
+        self.assertTrue(denied.is_error)
+        self.assertIn("Only administrators", denied.content[0].text)
+
+        os.environ["TASKFLOW_MCP_USER"] = self.admin.username
+        result = self.call_tool("get_team_workload")
+        self.assertFalse(result.is_error)
+        members = {
+            member["username"]: member
+            for member in result.structured_content["members"]
+        }
+        self.assertEqual(members[self.member.username]["assigned"], 1)
+        self.assertEqual(members[self.member.username]["overdue"], 1)
+        self.assertEqual(members[self.member.username]["completed"], 0)
+        self.assertEqual(members[self.other_member.username]["assigned"], 1)
+        self.assertEqual(members[self.other_member.username]["completed"], 0)
+
+    def test_new_tools_refuse_missing_or_inactive_configured_user(self):
+        self.member.is_active = False
+        self.member.save(update_fields=["is_active"])
+        for name, arguments in (
+            ("search_tasks", {"keyword": "Own"}),
+            ("get_project_summary", {"project_id": 1}),
+            ("get_daily_briefing", {}),
+            ("get_team_workload", {}),
+        ):
+            with self.subTest(tool=name, identity="inactive"):
+                result = self.call_tool(name, arguments)
+                self.assertTrue(result.is_error)
+                self.assertIn("missing or inactive", result.content[0].text)
+
+        os.environ["TASKFLOW_MCP_USER"] = "missing_mcp_identity"
+        for name, arguments in (
+            ("search_tasks", {"keyword": "Own"}),
+            ("get_project_summary", {"project_id": 1}),
+            ("get_daily_briefing", {}),
+            ("get_team_workload", {}),
+        ):
+            with self.subTest(tool=name, identity="missing"):
+                result = self.call_tool(name, arguments)
+                self.assertTrue(result.is_error)
+                self.assertIn("missing or inactive", result.content[0].text)
+
+    def test_new_tool_arguments_are_validated(self):
+        os.environ["TASKFLOW_MCP_USER"] = self.admin.username
+        for project_id in (0, -1, True):
+            with self.subTest(project_id=project_id):
+                result = self.call_tool("get_project_summary", {"project_id": project_id})
+                self.assertTrue(result.is_error)
+
+        bad_limit = self.call_tool("search_tasks", {"keyword": "Own", "limit": 0})
+        self.assertTrue(bad_limit.is_error)

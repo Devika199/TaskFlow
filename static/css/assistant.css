@@ -1,0 +1,574 @@
+/* TaskFlow AI Assistant & Copilot Experience */
+
+:root {
+  --tf-ai-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #2563eb 100%);
+  --tf-ai-glow: rgba(99, 102, 241, 0.28);
+}
+
+/* ==========================================================================
+   Floating Action Launcher (FAB)
+   ========================================================================== */
+.ai-fab-launcher {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1040;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  background: var(--tf-ai-gradient);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px var(--tf-ai-glow), 0 2px 6px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+}
+
+.ai-fab-launcher:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.4), 0 4px 10px rgba(15, 23, 42, 0.15);
+  color: #ffffff;
+}
+
+.ai-fab-launcher:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.ai-fab-launcher i {
+  font-size: 1.1rem;
+  animation: tf-ai-sparkle 3s ease-in-out infinite;
+}
+
+@keyframes tf-ai-sparkle {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.95; }
+  50% { transform: scale(1.15) rotate(10deg); opacity: 1; }
+}
+
+@media (max-width: 575.98px) {
+  .ai-fab-launcher {
+    bottom: 20px;
+    right: 20px;
+    padding: 0.85rem;
+    border-radius: 50%;
+  }
+  .ai-fab-launcher .ai-fab-text {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Offcanvas AI Drawer
+   ========================================================================== */
+.ai-assistant-offcanvas {
+  width: min(100vw, 460px) !important;
+  border-left: 1px solid var(--tf-card-border);
+  background: var(--tf-surface);
+  color: var(--tf-text-main);
+  box-shadow: -10px 0 35px rgba(15, 23, 42, 0.12);
+}
+
+.ai-assistant-offcanvas .offcanvas-header {
+  padding: 1rem 1.25rem;
+  background: var(--tf-surface);
+}
+
+.ai-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 0.65rem;
+  background: var(--tf-ai-gradient);
+  color: #ffffff;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 12px var(--tf-ai-glow);
+}
+
+.ai-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #059669;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ai-drawer-notice {
+  background: var(--tf-surface-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.ai-quick-chips {
+  background: var(--tf-surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ai-quick-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.badge-chip,
+.copilot-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--tf-card-border);
+  border-radius: 9999px;
+  background: var(--tf-surface-muted);
+  color: var(--tf-text-main);
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.badge-chip:hover,
+.copilot-chip-btn:hover {
+  border-color: var(--tf-primary);
+  background: rgba(79, 70, 229, 0.08);
+  color: var(--tf-primary);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Dashboard Copilot Spotlight Card
+   ========================================================================== */
+.copilot-dashboard-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(99, 102, 241, 0.25) !important;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04) 0%, rgba(37, 99, 235, 0.02) 100%);
+}
+
+.copilot-dashboard-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: var(--tf-ai-gradient);
+}
+
+.copilot-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 0.75rem;
+  background: var(--tf-ai-gradient);
+  color: #ffffff;
+  font-size: 1.25rem;
+  box-shadow: 0 6px 16px var(--tf-ai-glow);
+}
+
+/* ==========================================================================
+   Standalone Page Layout (.assistant-page)
+   ========================================================================== */
+.assistant-page {
+  width: min(100%, 960px);
+  margin: 0 auto;
+  color: var(--tf-text-main);
+}
+
+.assistant-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.5rem 0 1.25rem;
+}
+
+.assistant-heading h1 {
+  margin: 0 0 0.45rem;
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+
+.assistant-eyebrow {
+  margin-bottom: 0.4rem;
+  color: var(--tf-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.assistant-status,
+.assistant-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.assistant-status {
+  flex-shrink: 0;
+  color: var(--tf-text-muted);
+  font-size: 0.82rem;
+}
+
+.assistant-status i {
+  color: #059669;
+  font-size: 1rem;
+}
+
+.assistant-disclosure {
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--tf-card-border);
+  border-radius: 0.85rem;
+  background: var(--tf-surface-muted);
+  color: var(--tf-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.assistant-disclosure i {
+  margin-top: 0.1rem;
+  color: var(--tf-primary);
+  font-size: 1rem;
+}
+
+.assistant-card {
+  overflow: hidden;
+  border: 1px solid var(--tf-card-border);
+  border-radius: 1rem;
+  background: var(--tf-surface);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07);
+}
+
+/* ==========================================================================
+   Chat Messages & Bubbles
+   ========================================================================== */
+.assistant-messages {
+  display: flex;
+  min-height: 320px;
+  max-height: min(60vh, 640px);
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+  padding: 1.25rem;
+  scroll-behavior: smooth;
+}
+
+.assistant-message {
+  width: fit-content;
+  max-width: min(88%, 680px);
+  padding: 0.85rem 1.1rem;
+  border-radius: 1rem;
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+  line-height: 1.58;
+  animation: tf-msg-fade 0.2s ease-out;
+}
+
+@keyframes tf-msg-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.assistant-message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.assistant-message p + p {
+  margin-top: 0.6rem;
+}
+
+.assistant-message ul,
+.assistant-message ol {
+  margin: 0.5rem 0 0.5rem 1.25rem;
+  padding: 0;
+}
+
+.assistant-message code {
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+/* User Message Bubble */
+.assistant-message-user {
+  align-self: flex-end;
+  border-bottom-right-radius: 0.25rem;
+  border: 1px solid var(--tf-primary);
+  background: var(--tf-ai-gradient);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.2);
+}
+
+.assistant-message-user code {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.assistant-message-user .assistant-message-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Model (AI) Message Bubble */
+.assistant-message-model {
+  align-self: flex-start;
+  border-bottom-left-radius: 0.25rem;
+  border: 1px solid var(--tf-card-border);
+  background: var(--tf-surface-muted);
+  color: var(--tf-text-main);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.assistant-message-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
+/* ==========================================================================
+   Loading State (Thinking Indicator)
+   ========================================================================== */
+.assistant-loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 1.25rem;
+  background: var(--tf-surface-muted);
+  border-top: 1px solid var(--tf-card-border);
+  border-bottom: 1px solid var(--tf-card-border);
+  color: var(--tf-text-muted);
+  font-size: 0.82rem;
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tf-primary);
+  animation: typingBounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+.typing-dot:nth-child(3) { animation-delay: 0s; }
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ==========================================================================
+   Errors & Confirmation State
+   ========================================================================== */
+.assistant-error {
+  margin: 0.75rem 1.25rem 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #fecaca;
+  border-radius: 0.75rem;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.85rem;
+}
+
+.assistant-confirmation {
+  margin: 0.75rem 1.25rem 0.5rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid #fbbf24;
+  border-radius: 0.85rem;
+  background: #fffbeb;
+  color: #78350f;
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.15);
+}
+
+.assistant-confirmation-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  margin-bottom: 0.4rem;
+}
+
+.assistant-confirmation-body {
+  max-height: 220px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  margin-bottom: 0.85rem;
+}
+
+/* ==========================================================================
+   Composer Form
+   ========================================================================== */
+.assistant-composer,
+.assistant-composer-form {
+  display: flex;
+  flex-direction: column;
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid var(--tf-card-border);
+  background: var(--tf-surface);
+}
+
+.assistant-composer-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.65rem;
+}
+
+.assistant-composer textarea,
+.assistant-composer-form textarea {
+  min-height: 48px;
+  max-height: 160px;
+  resize: none;
+  border-radius: 0.75rem;
+  border: 1px solid var(--tf-card-border);
+  background: var(--tf-surface);
+  color: var(--tf-text-main);
+  padding: 0.75rem 0.95rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.assistant-composer textarea:focus,
+.assistant-composer-form textarea:focus {
+  border-color: var(--tf-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.assistant-send,
+.assistant-composer-form button[type="submit"] {
+  min-width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0.75rem;
+  background: var(--tf-ai-gradient);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--tf-ai-glow);
+  transition: all 0.15s ease;
+}
+
+.assistant-send:hover:not(:disabled),
+.assistant-composer-form button[type="submit"]:hover:not(:disabled) {
+  opacity: 0.95;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
+}
+
+.assistant-send:disabled,
+.assistant-composer-form button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.assistant-composer-hint {
+  margin: 0.35rem 0 0;
+  color: var(--tf-text-muted);
+  font-size: 0.72rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ==========================================================================
+   Dark Mode Overrides
+   ========================================================================== */
+[data-theme="dark"] .ai-assistant-offcanvas {
+  background: #111827;
+  border-color: #1f2937;
+}
+
+[data-theme="dark"] .copilot-dashboard-card {
+  border-color: rgba(99, 102, 241, 0.35) !important;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(30, 41, 59, 0.5) 100%);
+}
+
+[data-theme="dark"] .badge-chip,
+[data-theme="dark"] .copilot-chip-btn {
+  background: #1f2937;
+  border-color: #374151;
+  color: #f3f4f6;
+}
+
+[data-theme="dark"] .assistant-message-model {
+  background: #1f2937;
+  border-color: #374151;
+  color: #f9fafb;
+}
+
+[data-theme="dark"] .assistant-message-model code {
+  background: rgba(255, 255, 255, 0.1);
+  color: #a5b4fc;
+}
+
+[data-theme="dark"] .assistant-error {
+  border-color: #7f1d1d;
+  background: #351d25;
+  color: #fecaca;
+}
+
+[data-theme="dark"] .assistant-confirmation {
+  border-color: #854d0e;
+  background: #342b1d;
+  color: #fde68a;
+}
+
+[data-theme="dark"] .assistant-loading-indicator {
+  background: #1f2937;
+  border-color: #374151;
+}
+
+/* ==========================================================================
+   Responsive Adjustments
+   ========================================================================== */
+@media (max-width: 575.98px) {
+  .assistant-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .assistant-messages {
+    min-height: 260px;
+    padding: 0.85rem;
+  }
+
+  .assistant-message {
+    max-width: 95%;
+  }
+
+  .assistant-composer,
+  .assistant-composer-form {
+    padding: 0.75rem 0.85rem;
+  }
+}

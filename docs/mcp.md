@@ -93,6 +93,57 @@ verified in Cursor or Claude Desktop.
 | `create_task` | Not allowed. | Creates a task through the existing `TaskForm`, with optional active assignee. |
 | `update_task_status` | Updates status only on an assigned task. | Updates status only on any task. |
 | `assign_task` | Not allowed. | Assigns a task to an active user. |
+| `search_tasks` | Searches assigned tasks only. | Searches all tasks. |
+| `get_project_summary` | Only projects containing at least one task assigned to the user; metrics count only those assigned tasks. | Any project; metrics count all project tasks. |
+| `get_daily_briefing` | Summarizes only the configured user's assigned tasks. | Still summarizes only the configured user's assigned tasks. |
+| `get_team_workload` | Not allowed. | Returns aggregate counts for active users. |
+
+### Additional tool arguments and examples
+
+`search_tasks` requires a non-empty `keyword` (maximum 200 characters). It
+searches task titles and descriptions case-insensitively. Optional `status` and
+`priority` must match the model choices. `due_date_from` and `due_date_to` are
+inclusive ISO dates (`YYYY-MM-DD`), and the start must not be after the end.
+`limit` is optional and must be between 1 and 100 (default 50). Results use
+the same task visibility rules as the existing task tools.
+
+```json
+{
+  "keyword": "release",
+  "status": "IN_PROGRESS",
+  "priority": "HIGH",
+  "due_date_from": "2026-10-28",
+  "due_date_to": "2026-11-04",
+  "limit": 20
+}
+```
+
+`get_project_summary` takes a positive integer `project_id`. A member receives
+`Project not found.` both for a nonexistent project and for a project that has
+no tasks assigned to them. Its result includes the visible project task count,
+completed and in-progress counts, overdue count, and completion percentage.
+
+```json
+{"project_id": 12}
+```
+
+`get_daily_briefing` takes no arguments. It returns the configured user's
+assigned tasks due today, incomplete overdue tasks, and incomplete tasks due
+from tomorrow through the next seven days. It uses Django's local date
+(`timezone.localdate()`) and returns task records and counts for each group.
+
+```json
+{}
+```
+
+`get_team_workload` takes no arguments and is administrator-only. It returns
+the current local date and one aggregate record per active user containing
+their username and assigned, completed, and overdue task counts. It does not
+return task titles, descriptions, or other task details.
+
+```json
+{}
+```
 
 Statuses and priorities must match the existing TaskFlow model choices. Dates
 use ISO `YYYY-MM-DD`; valid past dates are allowed and count as overdue while
@@ -122,6 +173,12 @@ does not add per-client identity, remote transport, or additional approval
 prompts for writes. Django's model validation, role checks, and database
 constraints remain in effect for the implemented task operations.
 
+The project summary uses the same visibility rule as task lists: members see
+only projects containing tasks assigned to them and receive metrics for only
+those tasks. The daily briefing is personal even for administrators; it never
+includes other users' assigned tasks. The team workload tool is an aggregate
+view, restricted to configured administrators, and reports active users only.
+
 ## Verification
 
 The automated tests use Django `TestCase` data and the MCP SDK client to verify
@@ -129,3 +186,36 @@ tool discovery, valid and invalid arguments, inactive/unknown configured
 users, member/admin permissions, task visibility, database updates, activity
 entries, and notifications. The real stdio server was also listed and called
 through MCP Inspector during integration verification.
+
+## Django Gemini assistant
+
+The authenticated TaskFlow chat page uses the official `google-genai` Python
+SDK and the existing MCP server. Install project dependencies with
+`python -m pip install -r requirements.txt`, then set the Gemini API key in
+the environment of the Django process. For PowerShell:
+
+```powershell
+$env:GEMINI_API_KEY = "your-key-from-Google-AI-Studio"
+python manage.py runserver
+```
+
+Never put the key in templates, browser JavaScript, source control, or chat
+messages. `GEMINI_MODEL` is optional; the default is `gemini-3.5-flash`.
+
+Open **AI Assistant** from the authenticated TaskFlow sidebar. Each chat
+request starts a separate stdio MCP process using the logged-in active user's
+username as `TASKFLOW_MCP_USER`; it does not reuse the identity configured in
+MCP Inspector. The server continues to resolve that identity from the database
+and apply its existing task and role permissions. The chat endpoint is
+login-required, POST-only, and CSRF-protected.
+
+Read-only tools may be called while answering. Before the assistant executes
+`create_task`, `update_task_status`, or `assign_task`, it displays the proposed
+action and waits for confirmation. Pending actions and a bounded conversation
+history are stored in the user's Django session; chat does not add a model or
+migration.
+
+Chat messages and tool results needed to answer them are sent to Google's
+Gemini API. The page discloses this before chat use. Do not send information
+that your organization does not permit sharing with that service. TaskFlow
+does not send its Gemini API key to the MCP subprocess or browser.

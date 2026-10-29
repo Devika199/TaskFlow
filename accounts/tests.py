@@ -164,3 +164,25 @@ class AccountsTests(TestCase):
             register_response.context['form'].fields['email'].widget.input_type,
             'email',
         )
+
+    def test_toggle_user_active_requires_post(self):
+        self.client.login(username='admin_test', password='password123')
+        toggle_url = reverse('toggle_user_active', args=[self.member_user.id])
+
+        # GET request must return 405 Method Not Allowed and not modify state
+        response = self.client.get(toggle_url)
+        self.assertEqual(response.status_code, 405)
+        self.member_user.refresh_from_db()
+        self.assertTrue(self.member_user.is_active)
+
+        # POST request toggles active state
+        response = self.client.post(toggle_url)
+        self.assertEqual(response.status_code, 302)
+        self.member_user.refresh_from_db()
+        self.assertFalse(self.member_user.is_active)
+
+        # Second POST toggles back to active
+        response = self.client.post(toggle_url)
+        self.assertEqual(response.status_code, 302)
+        self.member_user.refresh_from_db()
+        self.assertTrue(self.member_user.is_active)

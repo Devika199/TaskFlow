@@ -188,6 +188,22 @@ class ViewPermissionTests(TestCase):
         self.assertEqual(self.own_task.assigned_to_id, self.member.id)
         self.assertEqual(self.own_task.priority, Task.PRIORITY_MEDIUM)
 
+    def test_update_task_status_requires_post(self):
+        self.client.login(username='perm_member', password='password123')
+        status_url = reverse('update_task_status', args=[self.own_task.pk])
+
+        # GET request must return 405 Method Not Allowed and not modify task status
+        response = self.client.get(status_url)
+        self.assertEqual(response.status_code, 405)
+        self.own_task.refresh_from_db()
+        self.assertEqual(self.own_task.status, Task.STATUS_TODO)
+
+        # POST request modifies task status
+        response = self.client.post(status_url, {'status': Task.STATUS_IN_PROGRESS})
+        self.assertIn(response.status_code, (200, 302))
+        self.own_task.refresh_from_db()
+        self.assertEqual(self.own_task.status, Task.STATUS_IN_PROGRESS)
+
     def test_user_cannot_mark_another_users_notification_as_read(self):
         self.client.login(username='perm_member', password='password123')
         response = self.client.post(

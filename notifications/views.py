@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 from .models import Notification
 
 
@@ -19,6 +20,7 @@ def notification_list_view(request):
 
 
 @login_required
+@require_POST
 def mark_read_view(request, pk):
     notif = get_object_or_404(Notification, pk=pk, recipient=request.user)
     notif.is_read = True
@@ -32,6 +34,7 @@ def mark_read_view(request, pk):
 
 
 @login_required
+@require_POST
 def mark_all_read_view(request):
     updated_count = request.user.notifications.filter(is_read=False).update(is_read=True)
 

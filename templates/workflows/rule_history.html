@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+
+{% block title %}Execution History - TaskFlow SaaS{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <a href="{% url 'workflow_rule_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+      <i class="bi bi-arrow-left me-1"></i>Back to Rules
+    </a>
+    <h3 class="fw-bold mb-0">
+      {% if rule %}
+        Execution History: {{ rule.name }}
+      {% else %}
+        Organization Workflow Execution Audit
+      {% endif %}
+    </h3>
+    <p class="text-muted small mb-0">
+      {% if rule %}
+        Audit log of all triggers, conditions evaluated, and actions executed for this rule.
+      {% else %}
+        Comprehensive audit log of automated workflow executions for {{ active_organization.name }}.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="card-saas">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-4">Timestamp</th>
+          {% if not rule %}<th>Rule Name</th>{% endif %}
+          <th>Trigger Event</th>
+          <th>Related Task</th>
+          <th>Status</th>
+          <th>Retries</th>
+          <th class="pe-4">Details / Error Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ex in executions %}
+        <tr>
+          <td class="ps-4 text-nowrap small text-muted">
+            {{ ex.created_at|date:"M d, Y H:i:s" }}
+          </td>
+          {% if not rule %}
+          <td>
+            <a href="{% url 'workflow_rule_history' ex.rule.id %}" class="fw-bold text-decoration-none">
+              {{ ex.rule.name }}
+            </a>
+          </td>
+          {% endif %}
+          <td>
+            <span class="badge bg-light text-dark border">
+              {{ ex.triggering_event }}
+            </span>
+          </td>
+          <td>
+            {% if ex.task %}
+            <a href="{% url 'task_detail' ex.task.id %}" class="text-decoration-none fw-semibold">
+              #{{ ex.task.id }} - {{ ex.task.title|truncatechars:30 }}
+            </a>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if ex.status == 'SUCCESS' %}
+            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Success</span>
+            {% elif ex.status == 'SKIPPED' %}
+            <span class="badge bg-secondary text-white"><i class="bi bi-skip-forward me-1"></i>Skipped</span>
+            {% elif ex.status == 'RUNNING' %}
+            <span class="badge bg-info-subtle text-info"><i class="bi bi-arrow-repeat me-1"></i>Running</span>
+            {% elif ex.status == 'FAILED' %}
+            <span class="badge bg-danger-subtle text-danger"><i class="bi bi-x-circle me-1"></i>Failed</span>
+            {% else %}
+            <span class="badge bg-light text-dark border">{{ ex.status }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="small text-muted">{{ ex.retry_count }}</span>
+          </td>
+          <td class="pe-4">
+            {% if ex.error_summary %}
+            <div class="text-danger small fw-semibold">{{ ex.error_summary }}</div>
+            {% elif ex.execution_log.actions %}
+              <div class="small text-muted">
+                {% for action in ex.execution_log.actions %}
+                <div>{{ action.details|default:action.status }}</div>
+                {% endfor %}
+              </div>
+            {% elif ex.execution_log.logs %}
+              <div class="small text-muted">{{ ex.execution_log.logs.0 }}</div>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center py-5">
+            <div class="text-muted mb-2"><i class="bi bi-clock-history fs-2 opacity-50"></i></div>
+            <div class="text-muted small">No execution logs recorded yet.</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+

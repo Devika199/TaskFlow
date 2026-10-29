@@ -21,10 +21,15 @@
   <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.min.css" rel="stylesheet">
 
   <!-- Custom Theme -->
-  <link rel="stylesheet" href="{% static 'css/taskflow.css' %}?v=calendar-command-dark-v2">
+  <link rel="stylesheet" href="{% static 'css/taskflow.css' %}?v=shortcuts-keycaps-20261028-4">
+  <link rel="stylesheet" href="{% static 'css/assistant.css' %}?v=taskflow-copilot-v2">
   {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body data-dashboard-url="{% url 'dashboard' %}"
+      data-kanban-url="{% url 'kanban' %}"
+      data-calendar-url="{% url 'task_calendar' %}"
+      data-task-list-url="{% url 'task_list' %}"
+      data-task-create-url="{% url 'task_create' %}">
 
   <!-- Mobile Backdrop -->
   <div id="sidebarBackdrop" class="position-fixed top-0 start-0 w-100 h-100 bg-dark opacity-50 d-none" style="z-index: 1035;"></div>
@@ -83,11 +88,15 @@
         </a>
         {% endif %}
 
-        {% if user.is_admin_role %}
+        {% if user.is_admin_role or active_membership.is_admin %}
         <div class="sidebar-category">Administration</div>
         <a href="{% url 'user_management' %}" class="sidebar-link {% if request.resolver_match.url_name == 'user_management' %}active{% endif %}">
           <i class="bi bi-people-fill"></i>
           <span>Team Members</span>
+        </a>
+        <a href="{% url 'workflow_rule_list' %}" class="sidebar-link {% if 'workflow' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="bi bi-diagram-3-fill"></i>
+          <span>Workflows</span>
         </a>
         <a href="{% url 'projects' %}" class="sidebar-link {% if request.resolver_match.url_name == 'projects' or request.resolver_match.url_name == 'project_edit' %}active{% endif %}">
           <i class="bi bi-folder2-open"></i>
@@ -153,11 +162,15 @@
             <i class="bi bi-moon-stars-fill" aria-hidden="true"></i>
             <span class="visually-hidden">Switch to dark mode</span>
           </button>
-          <button type="button" class="icon-btn shortcut-help-trigger" data-bs-toggle="modal" data-bs-target="#shortcutsHelp" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+          <button type="button" class="icon-btn shortcut-help-trigger" data-bs-toggle="modal" data-bs-target="#shortcutsHelp" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" title="Keyboard shortcuts (?)">
             <i class="bi bi-question-lg" aria-hidden="true"></i>
           </button>
           <button type="button" class="icon-btn command-palette-trigger" data-bs-toggle="modal" data-bs-target="#commandPalette" aria-label="Search tasks and pages" title="Search (Ctrl+K)">
             <i class="bi bi-search" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1 ai-drawer-trigger" data-bs-toggle="offcanvas" data-bs-target="#aiAssistantDrawer" aria-controls="aiAssistantDrawer" title="TaskFlow AI Copilot (Ctrl+J)">
+            <i class="bi bi-stars"></i>
+            <span class="d-none d-md-inline fw-semibold">AI Copilot</span>
           </button>
           {% if user.is_admin_role %}
           <button type="button" class="btn btn-primary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#quickNewTaskModal">
@@ -276,8 +289,8 @@
         </div>
         <div id="commandPaletteResults" class="command-palette-results" role="listbox" aria-label="Search results" aria-live="polite"></div>
         <div class="modal-footer justify-content-between small text-muted">
-          <span>Use ↑ ↓ to navigate, Enter to open, Esc to close</span>
-          <span>Ctrl K</span>
+          <span>Use <kbd>↑</kbd> <kbd>↓</kbd> to navigate, <kbd>Enter</kbd> to open, <kbd>Esc</kbd> to close</span>
+          <span><kbd>Ctrl</kbd> <kbd>K</kbd></span>
         </div>
       </div>
     </div>
@@ -285,7 +298,7 @@
 
   <div class="modal fade" id="shortcutsHelp" tabindex="-1" aria-labelledby="shortcutsHelpTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
+      <div class="modal-content shortcuts-help-modal">
         <div class="modal-header">
           <h2 class="modal-title fs-5 fw-bold" id="shortcutsHelpTitle">Keyboard shortcuts</h2>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close shortcuts"></button>
@@ -296,6 +309,8 @@
             <div><dt><kbd>?</kbd></dt><dd>Show this help</dd></div>
             <div><dt><kbd>G</kbd>, <kbd>D</kbd></dt><dd>Go to dashboard</dd></div>
             <div><dt><kbd>G</kbd>, <kbd>K</kbd></dt><dd>Go to Kanban</dd></div>
+            <div><dt><kbd>Esc</kbd></dt><dd>Close an open dialog</dd></div>
+            <div><dt><kbd>Ctrl</kbd> + <kbd>J</kbd></dt><dd>Toggle AI Copilot</dd></div>
             {% if user.is_admin_role %}<div><dt><kbd>N</kbd></dt><dd>Create a new task</dd></div>{% endif %}
           </dl>
         </div>
@@ -345,10 +360,37 @@
                 <input type="date" name="due_date" class="form-control">
               </div>
             </div>
+
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Project</label>
+                <select name="project" class="form-select">
+                  <option value="" selected>No Project (Optional)</option>
+                  {% for p in modal_projects %}
+                  <option value="{{ p.id }}">{{ p.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Assign to a project (optional).</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Labels</label>
+                <select name="labels" class="form-select" multiple size="3" aria-describedby="quickModalLabelsHelp">
+                  {% for lbl in modal_labels %}
+                  <option value="{{ lbl.id }}">{{ lbl.name }}</option>
+                  {% endfor %}
+                </select>
+                <div id="quickModalLabelsHelp" class="form-text">Hold Ctrl/Cmd to select multiple.</div>
+              </div>
+            </div>
           </div>
-          <div class="modal-footer bg-light">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-lg me-1"></i>Create Task</button>
+          <div class="modal-footer bg-light d-flex justify-content-between">
+            <a href="{% url 'task_create' %}" class="btn btn-outline-secondary btn-sm">
+              <i class="bi bi-arrows-angle-expand me-1"></i>Open Full Form
+            </a>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-lg me-1"></i>Create Task</button>
+            </div>
           </div>
         </form>
       </div>
@@ -356,13 +398,114 @@
   </div>
   {% endif %}
 
+  <!-- Floating AI Copilot Launcher -->
+  <button type="button" class="ai-fab-launcher" data-bs-toggle="offcanvas" data-bs-target="#aiAssistantDrawer" aria-controls="aiAssistantDrawer" aria-label="Open AI Copilot" title="TaskFlow AI Copilot (Ctrl+J)">
+    <i class="bi bi-stars"></i>
+    <span class="ai-fab-text">AI Copilot</span>
+  </button>
+
+  <!-- AI Assistant Offcanvas Drawer -->
+  <div class="offcanvas offcanvas-end ai-assistant-offcanvas shadow-lg" tabindex="-1" id="aiAssistantDrawer" aria-labelledby="aiAssistantDrawerLabel" data-chat-url="{% url 'ai_assistant:message' %}">
+    <div class="offcanvas-header border-bottom">
+      <div class="d-flex align-items-center gap-2">
+        <div class="ai-header-icon"><i class="bi bi-stars"></i></div>
+        <div>
+          <h5 class="offcanvas-title fw-bold fs-6 mb-0" id="aiAssistantDrawerLabel">TaskFlow Copilot</h5>
+          <span class="ai-header-badge"><i class="bi bi-shield-check"></i> Scoped to your permissions</span>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-1">
+        <a href="{% url 'ai_assistant:chat' %}" class="btn btn-sm btn-ghost text-muted" title="Open full screen" aria-label="Open full screen">
+          <i class="bi bi-arrows-angle-expand"></i>
+        </a>
+        <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      </div>
+    </div>
+    
+    <div class="offcanvas-body d-flex flex-column p-0">
+      <div class="ai-drawer-notice px-3 py-2 border-bottom">
+        <div class="d-flex align-items-center gap-2 text-muted">
+          <i class="bi bi-info-circle text-primary"></i>
+          <span>Messages are processed securely via Google Gemini using sandboxed TaskFlow MCP tools.</span>
+        </div>
+      </div>
+      
+      <div class="ai-quick-chips px-3 py-2 border-bottom d-flex gap-2 flex-wrap">
+        <button type="button" class="badge-chip" data-quick-prompt="Summarize my assigned tasks">
+          <i class="bi bi-list-task text-primary"></i> My tasks
+        </button>
+        <button type="button" class="badge-chip" data-quick-prompt="List overdue tasks">
+          <i class="bi bi-clock-history text-warning"></i> Overdue
+        </button>
+        <button type="button" class="badge-chip" data-quick-prompt="Give me my daily briefing">
+          <i class="bi bi-sun text-info"></i> Daily briefing
+        </button>
+        {% if user.is_admin_role %}
+        <button type="button" class="badge-chip" data-quick-prompt="Summarize team workload across active members">
+          <i class="bi bi-people text-success"></i> Team workload
+        </button>
+        {% endif %}
+      </div>
+
+      <div class="assistant-messages flex-grow-1 p-3" id="drawerAssistantMessages" role="log" aria-live="polite">
+        <div class="assistant-message assistant-message-model">
+          <div class="assistant-message-label"><i class="bi bi-stars text-primary"></i> TaskFlow Assistant</div>
+          <div class="assistant-message-body">
+            Hi {{ user.display_name }}! I'm your TaskFlow Copilot. You can ask me to summarize your tasks, check upcoming deadlines, search work across projects, or update statuses using natural language.
+          </div>
+        </div>
+      </div>
+
+      <div class="assistant-loading-indicator px-3 py-2 d-none" id="drawerAssistantLoading">
+        <div class="typing-dots me-2">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+        <span>TaskFlow Copilot is analyzing workspace...</span>
+      </div>
+
+      <div class="assistant-error mx-3 mb-2 d-none" id="drawerAssistantError" role="alert"></div>
+
+      <div class="assistant-confirmation mx-3 mb-2 d-none" id="drawerAssistantConfirmation">
+        <div class="assistant-confirmation-heading">
+          <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+          <span>Action Confirmation Required</span>
+        </div>
+        <div class="assistant-confirmation-body" id="drawerAssistantConfirmationText"></div>
+        <div class="d-flex gap-2 justify-content-end">
+          <button type="button" class="btn btn-sm btn-primary" id="drawerAssistantConfirmBtn">Confirm Change</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="drawerAssistantCancelBtn">Cancel</button>
+        </div>
+      </div>
+
+      <div class="assistant-composer-form">
+        <form id="drawerAssistantForm">
+          {% csrf_token %}
+          <div class="assistant-composer-inner">
+            <textarea class="form-control" id="drawerAssistantInput" rows="1" maxlength="4000" placeholder="Ask about tasks, deadlines, projects..." required></textarea>
+            <button class="assistant-send" id="drawerAssistantSend" type="submit" aria-label="Send message" title="Send message">
+              <i class="bi bi-send-fill"></i>
+            </button>
+          </div>
+          <div class="assistant-composer-hint">
+            <span>Enter to send · Shift+Enter for new line</span>
+            <span class="char-count">0/4000</span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Core Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.8/dist/sweetalert2.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script src="{% static 'js/shortcuts.js' %}?v=keyboard-shortcuts-20261028-1"></script>
   <script src="{% static 'js/theme.js' %}" defer></script>
-  <script src="{% static 'js/taskflow.js' %}"></script>
+  <script src="{% static 'js/taskflow.js' %}?v=keyboard-shortcuts-20261028-1"></script>
+  <script src="{% static 'js/assistant.js' %}?v=taskflow-copilot-v2" defer></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

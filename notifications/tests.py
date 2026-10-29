@@ -59,3 +59,41 @@ class NotificationsTests(TestCase):
 
         unread_count = self.user2.notifications.filter(is_read=False).count()
         self.assertEqual(unread_count, 0)
+
+    def test_mark_read_view_requires_post(self):
+        notif = create_notification(
+            recipient=self.user2,
+            actor=self.user1,
+            verb="alerted you"
+        )
+        self.client.login(username='u2', password='password123')
+        mark_url = reverse('mark_notification_read', args=[notif.id])
+
+        # GET request must return 405 Method Not Allowed and not mark as read
+        response = self.client.get(mark_url)
+        self.assertEqual(response.status_code, 405)
+        notif.refresh_from_db()
+        self.assertFalse(notif.is_read)
+
+        # POST request marks notification as read
+        response = self.client.post(mark_url)
+        self.assertEqual(response.status_code, 302)
+        notif.refresh_from_db()
+        self.assertTrue(notif.is_read)
+
+    def test_mark_all_read_view_requires_post(self):
+        create_notification(recipient=self.user2, actor=self.user1, verb="Notice 1")
+        create_notification(recipient=self.user2, actor=self.user1, verb="Notice 2")
+
+        self.client.login(username='u2', password='password123')
+        mark_all_url = reverse('mark_all_notifications_read')
+
+        # GET request must return 405 Method Not Allowed and leave count unchanged
+        response = self.client.get(mark_all_url)
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(self.user2.notifications.filter(is_read=False).count(), 2)
+
+        # POST request marks all notifications as read
+        response = self.client.post(mark_all_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.user2.notifications.filter(is_read=False).count(), 0)

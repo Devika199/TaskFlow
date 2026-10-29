@@ -239,3 +239,118 @@ class TaskCollaborationTests(TestCase):
         duplicate = LabelForm(data={'name': 'design', 'color': '#abcdef'})
         self.assertFalse(duplicate.is_valid())
         self.assertIn('name', duplicate.errors)
+
+
+    def test_task_form_user_scoping_and_archived_instance_handling(self):
+        # Admin sees all unarchived projects
+        admin_form = TaskForm(user=self.admin)
+        self.assertIn(self.project, admin_form.fields['project'].queryset)
+        self.assertIn(self.other_project, admin_form.fields['project'].queryset)
+
+        # Member only sees projects with tasks assigned to them
+        member_form = TaskForm(user=self.member)
+        self.assertIn(self.project, member_form.fields['project'].queryset)
+        self.assertNotIn(self.other_project, member_form.fields['project'].queryset)
+
+        # When editing a task whose project is archived, the archived project is included in queryset
+        self.project.archived = True
+        self.project.save(update_fields=['archived'])
+        edit_form = TaskForm(instance=self.task, user=self.admin)
+        self.assertIn(self.project, edit_form.fields['project'].queryset)
+        self.assertEqual(edit_form.fields['project'].label_from_instance(self.project), f"{self.project.name} (Archived)")
+
+    def test_task_create_and_edit_view_project_and_labels_lifecycle(self):
+        label_a = Label.objects.create(name='Backend', color='#10b981')
+        label_b = Label.objects.create(name='Frontend', color='#f59e0b')
+        self.client.login(username='collab_admin', password='password123')
+
+        # 1. Create a task with NO project and NO labels
+        response = self.client.post(reverse('task_create'), {
+            'title': 'Task Without Project',
+            'description': 'Standalone task',
+            'status': Task.STATUS_TODO,
+            'priority': Task.PRIORITY_LOW,
+            'due_date': '',
+            'project': '',
+            'labels': [],
+        }, follow=True)
+        self.assertEqual(response.status_code, 200)
+        task_no_proj = Task.objects.get(title='Task Without Project')
+        self.assertIsNone(task_no_proj.project)
+        self.assertEqual(task_no_proj.labels.count(), 0)
+
+        # 2. Edit task to assign project and multiple labels
+        edit_response = self.client.post(reverse('task_edit', args=[task_no_proj.pk]), {
+            'title': 'Task Now With Project',
+            'description': 'Assigned to Launch project with labels',
+            'status': Task.STATUS_IN_PROGRESS,
+            'priority': Task.PRIORITY_HIGH,
+            'due_date': '',
+            'project': self.project.pk,
+            'labels': [label_a.pk, label_b.pk],
+        }, follow=True)
+        self.assertEqual(edit_response.status_code, 200)
+        task_no_proj.refresh_from_db()
+        self.assertEqual(task_no_proj.project, self.project)
+        self.assertEqual(set(task_no_proj.labels.all()), {label_a, label_b})
+
+        # 3. Check task detail view displays project and assigned labels
+        detail_response = self.client.get(reverse('task_detail', args=[task_no_proj.pk]))
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(detail_response, self.project.name)
+        self.assertContains(detail_response, 'Backend')
+        self.assertContains(detail_response, 'Frontend')
+
+        # 4. Edit GET shows selected options
+        get_edit = self.client.get(reverse('task_edit', args=[task_no_proj.pk]))
+        self.assertEqual(get_edit.status_code, 200)
+        self.assertContains(get_edit, f'value="{self.project.pk}" selected')
+        self.assertContains(get_edit, f'value="{label_a.pk}" selected')
+        self.assertContains(get_edit, f'value="{label_b.pk}" selected')
+
+        # 5. Edit task to remove project and remove one label
+        clear_proj_response = self.client.post(reverse('task_edit', args=[task_no_proj.pk]), {
+            'title': 'Task Now Detached From Project',
+            'description': 'Project removed',
+            'status': Task.STATUS_IN_PROGRESS,
+            'priority': Task.PRIORITY_HIGH,
+            'due_date': '',
+            'project': '',
+            'labels': [label_a.pk],
+        }, follow=True)
+        self.assertEqual(clear_proj_response.status_code, 200)
+        task_no_proj.refresh_from_db()
+        self.assertIsNone(task_no_proj.project)
+        self.assertEqual(list(task_no_proj.labels.all()), [label_a])
+        self.assertTrue(TaskActivityLog.objects.filter(
+            task=task_no_proj,
+            action='UPDATED',
+            details__contains='Project set to None',
+        ).exists())
+
+    def test_tasks_context_processor(self):
+        from django.test import RequestFactory
+        from tasks.context_processors import tasks_context
+        rf = RequestFactory()
+
+        # Anonymous user
+        req_anon = rf.get('/')
+        req_anon.user = type('Anon', (), {'is_authenticated': False})()
+        ctx_anon = tasks_context(req_anon)
+        self.assertEqual(list(ctx_anon['modal_projects']), [])
+        self.assertEqual(list(ctx_anon['modal_labels']), [])
+
+        # Admin user
+        req_admin = rf.get('/')
+        req_admin.user = self.admin
+        ctx_admin = tasks_context(req_admin)
+        self.assertIn(self.project, ctx_admin['modal_projects'])
+        self.assertIn(self.other_project, ctx_admin['modal_projects'])
+        self.assertIn(self.label, ctx_admin['modal_labels'])
+
+        # Member user
+        req_member = rf.get('/')
+        req_member.user = self.member
+        ctx_member = tasks_context(req_member)
+        self.assertIn(self.project, ctx_member['modal_projects'])
+        self.assertNotIn(self.other_project, ctx_member['modal_projects'])

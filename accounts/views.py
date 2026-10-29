@@ -4,7 +4,9 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
+from organizations.models import Organization, OrganizationMembership
 from .forms import (AdminUserCreateForm, UserLoginForm, UserProfileForm,
                     UserRegistrationForm)
 from .models import User
@@ -18,6 +20,14 @@ def register_view(request):
         form = UserRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
+            default_org = Organization.objects.filter(slug='default').first() or Organization.objects.first()
+            if default_org:
+                role = OrganizationMembership.ROLE_ADMIN if user.is_admin_role else OrganizationMembership.ROLE_MEMBER
+                OrganizationMembership.objects.get_or_create(
+                    organization=default_org,
+                    user=user,
+                    defaults={'role': role, 'is_active': True}
+                )
             login(request, user)
             messages.success(request, f"Welcome to TaskFlow, {user.display_name}! Your account is ready.")
             return redirect('dashboard')
@@ -99,14 +109,24 @@ def profile_view(request):
 
 @login_required
 def user_list_view(request):
-    """Admin-only view for user management and workload visibility."""
-    if not request.user.is_admin_role:
+    """Admin-only view for user management and workload visibility within active organization."""
+    org = getattr(request, 'organization', None)
+    membership = getattr(request, 'membership', None)
+    is_org_admin = (membership and membership.is_admin) or request.user.is_admin_role
+    if not is_org_admin:
         raise PermissionDenied("Only administrators can access team user management.")
 
     if request.method == 'POST':
         create_form = AdminUserCreateForm(request.POST)
         if create_form.is_valid():
             new_user = create_form.save()
+            if org:
+                role = OrganizationMembership.ROLE_ADMIN if new_user.is_admin_role else OrganizationMembership.ROLE_MEMBER
+                OrganizationMembership.objects.get_or_create(
+                    organization=org,
+                    user=new_user,
+                    defaults={'role': role, 'is_active': new_user.is_active}
+                )
             messages.success(request, f"User {new_user.username} created successfully.")
             return redirect('user_management')
         else:
@@ -114,12 +134,27 @@ def user_list_view(request):
     else:
         create_form = AdminUserCreateForm()
 
-    users = User.objects.annotate(
-        total_tasks=Count('assigned_tasks'),
-        todo_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__status='TODO')),
-        in_progress_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__status='IN_PROGRESS')),
-        completed_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__status='COMPLETED')),
-    ).order_by('role', 'username')
+    task_filter = Q(assigned_tasks__organization=org) if org else Q()
+    users_qs = User.objects.all()
+    if org:
+        users_qs = users_qs.filter(organization_memberships__organization=org)
+
+    users = list(users_qs.annotate(
+        total_tasks=Count('assigned_tasks', filter=task_filter),
+        todo_tasks=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status='TODO')),
+        in_progress_tasks=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status='IN_PROGRESS')),
+        completed_tasks=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status='COMPLETED')),
+    ).distinct().order_by('role', 'username'))
+
+    if org:
+        memberships_by_user = {
+            m.user_id: m for m in OrganizationMembership.objects.filter(organization=org, user__in=users)
+        }
+        for u in users:
+            m = memberships_by_user.get(u.id)
+            if m:
+                u.is_active = m.is_active
+                u.role = 'ADMIN' if m.is_admin else 'MEMBER'
 
     return render(request, 'accounts/user_list.html', {
         'users': users,
@@ -128,14 +163,38 @@ def user_list_view(request):
 
 
 @login_required
+@require_POST
 def toggle_user_active_view(request, user_id):
-    if not request.user.is_admin_role:
-        raise PermissionDenied
+    org = getattr(request, 'organization', None)
+    membership = getattr(request, 'membership', None)
+    is_org_admin = (membership and membership.is_admin) or request.user.is_admin_role
+    if not is_org_admin:
+        raise PermissionDenied("Only administrators can manage user status.")
 
     target_user = get_object_or_404(User, id=user_id)
     if target_user.id == request.user.id:
         messages.warning(request, "You cannot deactivate your own account.")
         return redirect('user_management')
+
+    if org:
+        target_membership = OrganizationMembership.objects.filter(organization=org, user=target_user).first()
+        if target_membership:
+            if target_membership.is_owner and target_membership.is_active:
+                active_owners = org.memberships.filter(role=OrganizationMembership.ROLE_OWNER, is_active=True).count()
+                if active_owners <= 1:
+                    messages.error(request, "Cannot deactivate the last active owner of the organization.")
+                    return redirect('user_management')
+            target_membership.is_active = not target_membership.is_active
+            target_membership.save(update_fields=['is_active', 'updated_at'])
+
+            other_active = target_user.organization_memberships.exclude(organization=org).filter(is_active=True).exists()
+            if not other_active:
+                target_user.is_active = target_membership.is_active
+                target_user.save(update_fields=['is_active'])
+
+            status_str = "activated" if target_membership.is_active else "deactivated"
+            messages.success(request, f"User {target_user.username} has been {status_str}.")
+            return redirect('user_management')
 
     target_user.is_active = not target_user.is_active
     target_user.save()
@@ -144,6 +203,5 @@ def toggle_user_active_view(request, user_id):
     return redirect('user_management')
 
 
-#
-# set ADMIN_REGISTRATION_CODE=CjxkFEb3MCug9jwJwxirWQ
-# python manage.py runserver
+
+

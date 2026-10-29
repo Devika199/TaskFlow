@@ -17,11 +17,49 @@
     <a href="{% url 'kanban' %}" class="btn btn-outline-secondary">
       <i class="bi bi-layout-three-columns me-1"></i>Kanban Board
     </a>
+    <button type="button" class="btn btn-outline-primary d-flex align-items-center gap-1" data-bs-toggle="offcanvas" data-bs-target="#aiAssistantDrawer" aria-controls="aiAssistantDrawer">
+      <i class="bi bi-stars"></i><span>AI Copilot</span>
+    </button>
     {% if user.is_admin_role %}
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#quickNewTaskModal">
       <i class="bi bi-plus-lg me-1"></i>New Task
     </button>
     {% endif %}
+  </div>
+</div>
+
+<!-- TaskFlow AI Copilot Spotlight Card -->
+<div class="card-saas mb-4 p-3 border-0 shadow-sm copilot-dashboard-card">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="copilot-badge-icon">
+        <i class="bi bi-stars"></i>
+      </div>
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <h6 class="fw-bold mb-0">TaskFlow AI Copilot</h6>
+          <span class="badge bg-success-subtle text-success border border-success-subtle small py-1 px-2 rounded-pill">
+            <i class="bi bi-shield-check me-1"></i>Active · Safe MCP
+          </span>
+        </div>
+        <p class="text-muted small mb-0 mt-1">Ask questions, get daily briefings, or manage tasks using natural language.</p>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <button type="button" class="btn btn-sm copilot-chip-btn" data-assistant-prompt="Summarize my assigned tasks">
+        <i class="bi bi-list-check text-primary"></i>Summarize tasks
+      </button>
+      <button type="button" class="btn btn-sm copilot-chip-btn" data-assistant-prompt="List overdue tasks">
+        <i class="bi bi-clock-history text-warning"></i>Overdue tasks
+      </button>
+      <button type="button" class="btn btn-sm copilot-chip-btn" data-assistant-prompt="Give me a briefing on today's priorities">
+        <i class="bi bi-sun text-info"></i>Daily briefing
+      </button>
+      <button type="button" class="btn btn-sm btn-primary d-flex align-items-center gap-1" data-bs-toggle="offcanvas" data-bs-target="#aiAssistantDrawer">
+        <span>Open Chat</span>
+        <i class="bi bi-arrow-right-short"></i>
+      </button>
+    </div>
   </div>
 </div>
 

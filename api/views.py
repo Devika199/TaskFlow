@@ -9,9 +9,16 @@ from rest_framework.views import APIView
 
 from notifications.models import Notification
 from notifications.services import create_notification
+from workflows.events import (
+    notify_task_created,
+    notify_task_status_changed,
+    notify_task_updated,
+)
 from tasks.models import (
     Label, Project, Task, TaskActivityLog, TaskChecklistItem, TaskComment,
 )
+from organizations.middleware import resolve_request_organization
+from organizations.models import Organization, OrganizationMembership
 from .serializers import (NotificationSerializer, TaskCommentSerializer,
                           LabelSerializer, ProjectSerializer, TaskSerializer,
                           TaskChecklistItemSerializer,
@@ -21,12 +28,40 @@ from .serializers import (NotificationSerializer, TaskCommentSerializer,
 User = get_user_model()
 
 
+def _ensure_api_organization(request):
+    if getattr(request, 'organization', None) is not None:
+        return request.organization
+    org, membership, is_unauth = resolve_request_organization(request)
+    if is_unauth:
+        raise exceptions.PermissionDenied("You do not have access to the requested organization.")
+    request.organization = org
+    request.membership = membership
+    return org
+
+
+def _is_request_admin(request):
+    _ensure_api_organization(request)
+    membership = getattr(request, 'membership', None)
+    if membership:
+        return membership.is_admin
+    if hasattr(request, 'user') and request.user.is_authenticated:
+        from tasks.models import _get_user_org_cache
+        active_ids, admin_ids, has_any = _get_user_org_cache(request.user)
+        if has_any:
+            org = getattr(request, 'organization', None)
+            if org:
+                return org.id in admin_ids
+            return False
+        return bool(request.user.is_admin_role)
+    return False
+
+
 class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         return bool(
             request.user
             and request.user.is_authenticated
-            and (request.method in permissions.SAFE_METHODS or request.user.is_admin_role)
+            and (request.method in permissions.SAFE_METHODS or _is_request_admin(request))
         )
 
 
@@ -54,13 +89,16 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        org = _ensure_api_organization(self.request)
         qs = Task.objects.select_related(
             'created_by', 'assigned_to', 'project'
         ).prefetch_related('comments', 'labels', 'checklist_items')
+        if org:
+            qs = qs.filter(organization=org)
         today = timezone.now().date()
 
         # Strict RBAC: Members can ONLY access tasks assigned to them
-        if not self.request.user.is_admin_role:
+        if not _is_request_admin(self.request):
             qs = qs.filter(assigned_to=self.request.user)
 
         # Query filters
@@ -77,7 +115,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             qs = qs.filter(priority=priority_param)
 
         # Assignee filter (only admins can query other members' assigned tasks)
-        if self.request.user.is_admin_role:
+        if _is_request_admin(self.request):
             assignee = self.request.query_params.get('assigned_to')
             if assignee == 'me':
                 qs = qs.filter(assigned_to=self.request.user)
@@ -95,10 +133,14 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         # Strict RBAC: Only Admin can create tasks
-        if not self.request.user.is_admin_role:
+        if not _is_request_admin(self.request):
             raise exceptions.PermissionDenied("Only administrators can create tasks.")
 
-        task = serializer.save(created_by=self.request.user)
+        org = _ensure_api_organization(self.request)
+        save_kwargs = {'created_by': self.request.user}
+        if org:
+            save_kwargs['organization'] = org
+        task = serializer.save(**save_kwargs)
         TaskActivityLog.objects.create(
             task=task,
             actor=self.request.user,
@@ -113,10 +155,11 @@ class TaskViewSet(viewsets.ModelViewSet):
                 task=task,
                 notification_type=Notification.TYPE_ASSIGNMENT
             )
+        notify_task_created(task, actor=self.request.user)
 
     def perform_update(self, serializer):
         # Strict RBAC: Only Admin can edit task details or reassign
-        if not self.request.user.is_admin_role:
+        if not _is_request_admin(self.request):
             raise exceptions.PermissionDenied("Only administrators can edit task details.")
 
         task = self.get_object()
@@ -154,10 +197,16 @@ class TaskViewSet(viewsets.ModelViewSet):
             action='UPDATED',
             details="; ".join(changes) if changes else "Task updated via API."
         )
+        notify_task_updated(
+            updated_task,
+            actor=self.request.user,
+            old_status=old_status,
+            old_assignee=old_assignee,
+        )
 
     def perform_destroy(self, instance):
         # Strict RBAC: Only Admin can delete tasks
-        if not self.request.user.is_admin_role:
+        if not _is_request_admin(self.request):
             raise exceptions.PermissionDenied("Only administrators can delete tasks.")
         instance.delete()
 
@@ -195,6 +244,8 @@ class TaskViewSet(viewsets.ModelViewSet):
                     notification_type=Notification.TYPE_STATUS_CHANGE
                 )
 
+            notify_task_status_changed(task, actor=request.user, old_status=old_status)
+
         return Response({
             'success': True,
             'id': task.id,
@@ -212,13 +263,20 @@ class ProjectViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
 
     def get_queryset(self):
+        org = _ensure_api_organization(self.request)
         queryset = Project.objects.all()
-        if not self.request.user.is_admin_role:
+        if org:
+            queryset = queryset.filter(organization=org)
+        if not _is_request_admin(self.request):
             queryset = queryset.filter(tasks__assigned_to=self.request.user).distinct()
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        org = _ensure_api_organization(self.request)
+        save_kwargs = {'created_by': self.request.user}
+        if org:
+            save_kwargs['organization'] = org
+        serializer.save(**save_kwargs)
 
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
@@ -231,7 +289,20 @@ class ProjectViewSet(viewsets.ModelViewSet):
 class LabelViewSet(viewsets.ModelViewSet):
     serializer_class = LabelSerializer
     permission_classes = [IsAdminOrReadOnly]
-    queryset = Label.objects.all()
+
+    def get_queryset(self):
+        org = _ensure_api_organization(self.request)
+        qs = Label.objects.all()
+        if org:
+            qs = qs.filter(organization=org)
+        return qs
+
+    def perform_create(self, serializer):
+        org = _ensure_api_organization(self.request)
+        save_kwargs = {}
+        if org:
+            save_kwargs['organization'] = org
+        serializer.save(**save_kwargs)
 
 
 class TaskChecklistItemViewSet(viewsets.ModelViewSet):
@@ -239,31 +310,46 @@ class TaskChecklistItemViewSet(viewsets.ModelViewSet):
     permission_classes = [ChecklistItemPermission]
 
     def get_queryset(self):
+        org = _ensure_api_organization(self.request)
         queryset = TaskChecklistItem.objects.select_related('task')
-        if not self.request.user.is_admin_role:
+        if org:
+            queryset = queryset.filter(task__organization=org)
+        if not _is_request_admin(self.request):
             queryset = queryset.filter(task__assigned_to=self.request.user)
 
         task_id = self.request.query_params.get('task')
         if task_id:
             task_queryset = Task.objects.all()
-            if not self.request.user.is_admin_role:
+            if org:
+                task_queryset = task_queryset.filter(organization=org)
+            if not _is_request_admin(self.request):
                 task_queryset = task_queryset.filter(assigned_to=self.request.user)
             get_object_or_404(task_queryset, pk=task_id)
             queryset = queryset.filter(task_id=task_id)
         return queryset
 
     def create(self, request, *args, **kwargs):
-        if not request.user.is_admin_role:
-            task_id = request.data.get('task')
+        org = _ensure_api_organization(request)
+        is_admin = _is_request_admin(request)
+        task_id = request.data.get('task')
+        if not is_admin:
             if not task_id:
                 raise exceptions.ValidationError({'task': 'This field is required.'})
             tasks = Task.objects.filter(assigned_to=request.user)
+            if org:
+                tasks = tasks.filter(organization=org)
             get_object_or_404(tasks, pk=task_id)
             raise exceptions.PermissionDenied('Members cannot create checklist items.')
+        else:
+            if task_id:
+                tasks = Task.objects.all()
+                if org:
+                    tasks = tasks.filter(organization=org)
+                get_object_or_404(tasks, pk=task_id)
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
-        if request.user.is_admin_role:
+        if _is_request_admin(request):
             return super().update(request, *args, **kwargs)
 
         instance = self.get_object()
@@ -286,9 +372,12 @@ class TaskCommentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        org = _ensure_api_organization(self.request)
         qs = TaskComment.objects.select_related('author', 'task')
+        if org:
+            qs = qs.filter(task__organization=org)
         # Strict RBAC: Members can only list comments on tasks assigned to them
-        if not self.request.user.is_admin_role:
+        if not _is_request_admin(self.request):
             qs = qs.filter(task__assigned_to=self.request.user)
 
         task_id = self.request.query_params.get('task')
@@ -297,14 +386,16 @@ class TaskCommentViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        if not request.user.is_admin_role:
-            task_id = request.data.get('task')
-            if not task_id:
-                raise exceptions.NotFound("Task not found.")
-            get_object_or_404(
-                Task.objects.filter(assigned_to=request.user),
-                pk=task_id,
-            )
+        org = _ensure_api_organization(request)
+        task_id = request.data.get('task')
+        if not task_id:
+            raise exceptions.NotFound("Task not found.")
+        task_qs = Task.objects.all()
+        if org:
+            task_qs = task_qs.filter(organization=org)
+        if not _is_request_admin(request):
+            task_qs = task_qs.filter(assigned_to=request.user)
+        get_object_or_404(task_qs, pk=task_id)
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
@@ -354,15 +445,22 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Strict isolation: Only current user's notifications
+        # Strict isolation: Only current user's notifications within active org
+        org = _ensure_api_organization(self.request)
         qs = self.request.user.notifications.select_related('actor', 'task')
+        if org:
+            qs = qs.filter(organization=org)
         if self.request.query_params.get('unread_only') in ['true', '1']:
             qs = qs.filter(is_read=False)
         return qs
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-        unread_count = request.user.notifications.filter(is_read=False).count()
+        org = getattr(request, 'organization', None)
+        notif_qs = request.user.notifications.filter(is_read=False)
+        if org:
+            notif_qs = notif_qs.filter(organization=org)
+        unread_count = notif_qs.count()
 
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -382,12 +480,20 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         notif = self.get_object()
         notif.is_read = True
         notif.save(update_fields=['is_read'])
-        unread_count = request.user.notifications.filter(is_read=False).count()
+        org = getattr(request, 'organization', None)
+        notif_qs = request.user.notifications.filter(is_read=False)
+        if org:
+            notif_qs = notif_qs.filter(organization=org)
+        unread_count = notif_qs.count()
         return Response({'success': True, 'unread_count': unread_count})
 
     @action(detail=False, methods=['post'], url_path='mark-all-read')
     def mark_all_read(self, request):
-        count = request.user.notifications.filter(is_read=False).update(is_read=True)
+        org = getattr(request, 'organization', None)
+        notif_qs = request.user.notifications.filter(is_read=False)
+        if org:
+            notif_qs = notif_qs.filter(organization=org)
+        count = notif_qs.update(is_read=True)
         return Response({'success': True, 'marked_count': count, 'unread_count': 0})
 
 
@@ -395,13 +501,16 @@ class AnalyticsOverviewAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if not request.user.is_admin_role:
+        if not _is_request_admin(request):
             raise exceptions.PermissionDenied(
                 "Administrator privileges are required to view analytics."
             )
 
+        org = _ensure_api_organization(request)
         today = timezone.now().date()
         tasks = Task.objects.all()
+        if org:
+            tasks = tasks.filter(organization=org)
 
         total = tasks.count()
         completed = tasks.filter(status=Task.STATUS_COMPLETED).count()
@@ -436,16 +545,25 @@ class AnalyticsWorkloadAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if not request.user.is_admin_role:
+        if not _is_request_admin(request):
             raise exceptions.PermissionDenied("Administrator privileges are required to view team workload.")
 
+        org = _ensure_api_organization(request)
         today = timezone.now().date()
-        workloads = User.objects.filter(is_active=True).annotate(
-            total_assigned=Count('assigned_tasks'),
-            todo=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_TODO)),
-            in_progress=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_IN_PROGRESS)),
-            completed=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_COMPLETED)),
-            overdue=Count('assigned_tasks', filter=Q(assigned_tasks__due_date__lt=today, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS]))
+        users_qs = User.objects.filter(is_active=True)
+        task_filter = Q(assigned_tasks__organization=org) if org else Q()
+        if org:
+            users_qs = users_qs.filter(
+                organization_memberships__organization=org,
+                organization_memberships__is_active=True,
+            )
+
+        workloads = users_qs.annotate(
+            total_assigned=Count('assigned_tasks', filter=task_filter),
+            todo=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status=Task.STATUS_TODO)),
+            in_progress=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status=Task.STATUS_IN_PROGRESS)),
+            completed=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__status=Task.STATUS_COMPLETED)),
+            overdue=Count('assigned_tasks', filter=task_filter & Q(assigned_tasks__due_date__lt=today, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS]))
         ).order_by('-total_assigned')
 
         data = [
@@ -470,8 +588,15 @@ class UsersListAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if not request.user.is_admin_role:
+        if not _is_request_admin(request):
             raise exceptions.PermissionDenied("Administrator privileges are required.")
-        users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+        org = _ensure_api_organization(request)
+        users = User.objects.filter(is_active=True)
+        if org:
+            users = users.filter(
+                organization_memberships__organization=org,
+                organization_memberships__is_active=True,
+            )
+        users = users.order_by('first_name', 'username')
         serializer = UserSummarySerializer(users, many=True)
         return Response(serializer.data)

@@ -15,6 +15,11 @@ from django.views.decorators.http import require_POST
 
 from notifications.models import Notification
 from notifications.services import create_notification
+from workflows.events import (
+    notify_task_created,
+    notify_task_status_changed,
+    notify_task_updated,
+)
 from .forms import (
     LabelForm,
     ProjectForm,
@@ -32,18 +37,67 @@ TASK_SORTS = [
 ]
 
 
-def _visible_tasks_for_user(user):
+def _is_org_admin(request):
+    if not request.user or not request.user.is_authenticated:
+        return False
+    membership = getattr(request, 'membership', None)
+    if membership:
+        return membership.is_admin
+    from .models import _get_user_org_cache
+    active_ids, admin_ids, has_any = _get_user_org_cache(request.user)
+    if has_any:
+        org = getattr(request, 'organization', None)
+        if org:
+            return org.id in admin_ids
+        return False
+    return bool(request.user.is_admin_role)
+
+
+def _admin_only(request):
+    if not _is_org_admin(request):
+        raise PermissionDenied("Only administrators are permitted to manage this resource.")
+
+
+def _visible_tasks_for_user(user, organization=None):
     tasks = Task.objects.select_related(
         'assigned_to', 'created_by', 'project'
     ).prefetch_related('comments', 'labels', 'checklist_items')
-    if not user.is_admin_role:
+    if organization:
+        tasks = tasks.filter(organization=organization)
+    membership = user.organization_memberships.filter(organization=organization, is_active=True).first() if organization else None
+    is_admin = membership.is_admin if membership else user.is_admin_role
+    if not is_admin:
         tasks = tasks.filter(assigned_to=user)
     return tasks
 
 
+def _visible_task_or_404(request, pk):
+    tasks = Task.objects.select_related('created_by', 'assigned_to', 'project').prefetch_related('labels', 'checklist_items')
+    if getattr(request, 'organization', None):
+        tasks = tasks.filter(organization=request.organization)
+    if not _is_org_admin(request):
+        tasks = tasks.filter(assigned_to=request.user)
+    return get_object_or_404(tasks, pk=pk)
+
+
+def _visible_project_or_404(request, pk):
+    projects = Project.objects.all()
+    if getattr(request, 'organization', None):
+        projects = projects.filter(organization=request.organization)
+    return get_object_or_404(projects, pk=pk)
+
+
+def _visible_label_or_404(request, pk):
+    labels = Label.objects.all()
+    if getattr(request, 'organization', None):
+        labels = labels.filter(organization=request.organization)
+    return get_object_or_404(labels, pk=pk)
+
+
 def _filtered_task_queryset(request):
     today = timezone.localdate()
-    tasks = _visible_tasks_for_user(request.user)
+    org = getattr(request, 'organization', None)
+    tasks = _visible_tasks_for_user(request.user, organization=org)
     q = request.GET.get('q', '').strip()
     if q:
         tasks = tasks.filter(Q(title__icontains=q) | Q(description__icontains=q))
@@ -65,7 +119,7 @@ def _filtered_task_queryset(request):
         tasks = tasks.filter(labels__id=int(label_id))
 
     assignee = request.GET.get('assigned_to', '').strip()
-    if request.user.is_admin_role:
+    if _is_org_admin(request):
         if assignee == 'me':
             tasks = tasks.filter(assigned_to=request.user)
         elif assignee == 'unassigned':
@@ -95,11 +149,16 @@ def landing_view(request):
 def dashboard_view(request):
     user = request.user
     today = timezone.now().date()
+    org = getattr(request, 'organization', None)
 
     all_tasks = Task.objects.select_related('assigned_to', 'created_by')
+    if org:
+        all_tasks = all_tasks.filter(organization=org)
 
-    if user.is_admin_role:
-        # System-wide metrics for Admin
+    is_admin = _is_org_admin(request)
+
+    if is_admin:
+        # System-wide metrics for Admin within active organization
         total_tasks_count = all_tasks.count()
         completed_count = all_tasks.filter(status=Task.STATUS_COMPLETED).count()
         in_progress_count = all_tasks.filter(status=Task.STATUS_IN_PROGRESS).count()
@@ -116,13 +175,27 @@ def dashboard_view(request):
             status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS]
         ).order_by('due_date', '-priority')[:6]
 
-        recent_activities = TaskActivityLog.objects.select_related('actor', 'task')[:10]
+        activities_qs = TaskActivityLog.objects.select_related('actor', 'task')
+        if org:
+            activities_qs = activities_qs.filter(task__organization=org)
+        recent_activities = activities_qs[:10]
 
-        team_workload = User.objects.filter(is_active=True).annotate(
-            active_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS])),
-            completed_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_COMPLETED)),
-            overdue_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__due_date__lt=today, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS])),
-        ).order_by('-active_tasks')[:8]
+        if org:
+            team_workload = User.objects.filter(
+                organization_memberships__organization=org,
+                organization_memberships__is_active=True,
+                is_active=True,
+            ).annotate(
+                active_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__organization=org, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS])),
+                completed_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__organization=org, assigned_tasks__status=Task.STATUS_COMPLETED)),
+                overdue_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__organization=org, assigned_tasks__due_date__lt=today, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS])),
+            ).order_by('-active_tasks')[:8]
+        else:
+            team_workload = User.objects.filter(is_active=True).annotate(
+                active_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS])),
+                completed_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__status=Task.STATUS_COMPLETED)),
+                overdue_tasks=Count('assigned_tasks', filter=Q(assigned_tasks__due_date__lt=today, assigned_tasks__status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS])),
+            ).order_by('-active_tasks')[:8]
 
         priority_counts = {
             'High': all_tasks.filter(priority=Task.PRIORITY_HIGH).count(),
@@ -136,7 +209,7 @@ def dashboard_view(request):
             'Completed': completed_count,
         }
     else:
-        # Member-scoped metrics: strictly assigned to current user
+        # Member-scoped metrics: strictly assigned to current user within active organization
         my_tasks = all_tasks.filter(assigned_to=user)
         total_tasks_count = my_tasks.count()
         completed_count = my_tasks.filter(status=Task.STATUS_COMPLETED).count()
@@ -154,7 +227,10 @@ def dashboard_view(request):
             status__in=[Task.STATUS_TODO, Task.STATUS_IN_PROGRESS]
         ).order_by('due_date', '-priority')[:6]
 
-        recent_activities = TaskActivityLog.objects.filter(task__assigned_to=user).select_related('actor', 'task')[:10]
+        activities_qs = TaskActivityLog.objects.filter(task__assigned_to=user).select_related('actor', 'task')
+        if org:
+            activities_qs = activities_qs.filter(task__organization=org)
+        recent_activities = activities_qs[:10]
         team_workload = []
 
         priority_counts = {
@@ -189,35 +265,50 @@ def dashboard_view(request):
 @login_required
 def task_list_view(request):
     today = timezone.now().date()
+    org = getattr(request, 'organization', None)
+    is_admin = _is_org_admin(request)
     q = request.GET.get('q', '').strip()
     status = request.GET.get('status', '').strip()
     priority = request.GET.get('priority', '').strip()
     project_id = request.GET.get('project', '').strip()
     label_id = request.GET.get('label', '').strip()
     assignee = request.GET.get('assigned_to', '').strip()
-    if not request.user.is_admin_role:
+    if not is_admin:
         assignee = 'me'
     overdue = request.GET.get('overdue', '').strip()
     sort = request.GET.get('sort', '-created_at')
     tasks = _filtered_task_queryset(request)
 
-    users = User.objects.filter(is_active=True).order_by('first_name', 'username')
-    if request.user.is_admin_role:
-        projects = Project.objects.all()
+    if org:
+        users = User.objects.filter(
+            organization_memberships__organization=org,
+            organization_memberships__is_active=True,
+            is_active=True,
+        ).distinct().order_by('first_name', 'username')
+        projects = Project.objects.filter(organization=org)
+        labels = Label.objects.filter(organization=org)
     else:
-        projects = Project.objects.filter(tasks__assigned_to=request.user).distinct()
+        users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+        projects = Project.objects.all()
+        labels = Label.objects.all()
+
+    if not is_admin:
+        projects = projects.filter(tasks__assigned_to=request.user).distinct()
     projects = projects.order_by('name')
-    labels = Label.objects.all()
 
     # Scoped metric counts for top pills
-    if request.user.is_admin_role:
-        all_count = Task.objects.count()
-        my_count = Task.objects.filter(assigned_to=request.user).count()
-        overdue_count = Task.objects.filter(due_date__lt=today).exclude(status=Task.STATUS_COMPLETED).count()
+    base_tasks = Task.objects.all()
+    if org:
+        base_tasks = base_tasks.filter(organization=org)
+
+    if is_admin:
+        all_count = base_tasks.count()
+        my_count = base_tasks.filter(assigned_to=request.user).count()
+        overdue_count = base_tasks.filter(due_date__lt=today).exclude(status=Task.STATUS_COMPLETED).count()
     else:
-        all_count = Task.objects.filter(assigned_to=request.user).count()
+        all_count = base_tasks.filter(assigned_to=request.user).count()
         my_count = all_count
-        overdue_count = Task.objects.filter(assigned_to=request.user, due_date__lt=today).exclude(status=Task.STATUS_COMPLETED).count()
+        overdue_count = base_tasks.filter(assigned_to=request.user, due_date__lt=today).exclude(status=Task.STATUS_COMPLETED).count()
 
     context = {
         'tasks': tasks,
@@ -241,6 +332,8 @@ def task_list_view(request):
 
 @login_required
 def task_calendar_view(request):
+    org = getattr(request, 'organization', None)
+    is_admin = _is_org_admin(request)
     month_value = request.GET.get('month', '')
     try:
         selected_month = datetime.strptime(month_value, '%Y-%m').date().replace(day=1) if month_value else timezone.localdate().replace(day=1)
@@ -252,12 +345,12 @@ def task_calendar_view(request):
     previous_month = (month_start - timedelta(days=1)).replace(day=1)
     month_end = next_month - timezone.timedelta(days=1)
 
-    tasks = _visible_tasks_for_user(request.user).filter(
+    tasks = _visible_tasks_for_user(request.user, organization=org).filter(
         due_date__gte=month_start,
         due_date__lte=month_end,
     )
     assignee = request.GET.get('assigned_to', '').strip()
-    if request.user.is_admin_role:
+    if is_admin:
         if assignee == 'me':
             tasks = tasks.filter(assigned_to=request.user)
         elif assignee == 'unassigned':
@@ -286,7 +379,15 @@ def task_calendar_view(request):
             for day in week
         ])
 
-    users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+    if org:
+        users = User.objects.filter(
+            organization_memberships__organization=org,
+            organization_memberships__is_active=True,
+            is_active=True,
+        ).distinct().order_by('first_name', 'username')
+    else:
+        users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+
     return render(request, 'tasks/calendar.html', {
         'weeks': weeks,
         'weekdays': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -305,7 +406,8 @@ def task_palette_search_view(request):
     if len(query) < 2:
         return JsonResponse({'results': []})
 
-    tasks = _visible_tasks_for_user(request.user).filter(
+    org = getattr(request, 'organization', None)
+    tasks = _visible_tasks_for_user(request.user, organization=org).filter(
         Q(title__icontains=query) | Q(description__icontains=query)
     ).order_by('-updated_at')[:10]
     return JsonResponse({
@@ -324,7 +426,7 @@ def task_palette_search_view(request):
 
 @login_required
 def task_csv_export_view(request):
-    if not request.user.is_admin_role:
+    if not _is_org_admin(request):
         raise PermissionDenied("Only administrators may export the task list.")
 
     output = io.StringIO(newline='')
@@ -353,15 +455,9 @@ def task_csv_export_view(request):
 
 @login_required
 def kanban_view(request):
-    # Strict RBAC: Members see only their assigned tasks on Kanban board
-    if request.user.is_admin_role:
-        tasks = Task.objects.select_related(
-            'assigned_to', 'created_by', 'project'
-        ).prefetch_related('comments', 'labels', 'checklist_items')
-    else:
-        tasks = Task.objects.filter(assigned_to=request.user).select_related(
-            'assigned_to', 'created_by', 'project'
-        ).prefetch_related('comments', 'labels', 'checklist_items')
+    org = getattr(request, 'organization', None)
+    is_admin = _is_org_admin(request)
+    tasks = _visible_tasks_for_user(request.user, organization=org)
 
     q = request.GET.get('q', '').strip()
     if q:
@@ -380,7 +476,7 @@ def kanban_view(request):
         tasks = tasks.filter(labels__id=int(label_id))
 
     assignee = request.GET.get('assigned_to', '').strip()
-    if request.user.is_admin_role:
+    if is_admin:
         if assignee == 'me':
             tasks = tasks.filter(assigned_to=request.user)
         elif assignee.isdigit():
@@ -392,13 +488,22 @@ def kanban_view(request):
     in_progress_tasks = [t for t in tasks if t.status == Task.STATUS_IN_PROGRESS]
     completed_tasks = [t for t in tasks if t.status == Task.STATUS_COMPLETED]
 
-    users = User.objects.filter(is_active=True).order_by('first_name', 'username')
-    if request.user.is_admin_role:
-        projects = Project.objects.all()
+    if org:
+        users = User.objects.filter(
+            organization_memberships__organization=org,
+            organization_memberships__is_active=True,
+            is_active=True,
+        ).distinct().order_by('first_name', 'username')
+        projects = Project.objects.filter(organization=org)
+        labels = Label.objects.filter(organization=org)
     else:
-        projects = Project.objects.filter(tasks__assigned_to=request.user).distinct()
+        users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+        projects = Project.objects.all()
+        labels = Label.objects.all()
+
+    if not is_admin:
+        projects = projects.filter(tasks__assigned_to=request.user).distinct()
     projects = projects.order_by('name')
-    labels = Label.objects.all()
 
     context = {
         'todo_tasks': todo_tasks,
@@ -418,12 +523,7 @@ def kanban_view(request):
 
 @login_required
 def task_detail_view(request, pk):
-    tasks = Task.objects.select_related(
-        'created_by', 'assigned_to', 'project'
-    ).prefetch_related('labels', 'checklist_items')
-    if not request.user.is_admin_role:
-        tasks = tasks.filter(assigned_to=request.user)
-    task = get_object_or_404(tasks, pk=pk)
+    task = _visible_task_or_404(request, pk)
 
     comments = task.comments.filter(parent__isnull=True).select_related('author').prefetch_related(
         'replies', 'replies__author'
@@ -446,14 +546,17 @@ def task_detail_view(request, pk):
 @login_required
 def task_create_view(request):
     # Strict RBAC: Only Admin can create tasks
-    if not request.user.is_admin_role:
+    if not _is_org_admin(request):
         raise PermissionDenied("Only administrators are permitted to create tasks.")
 
+    org = getattr(request, 'organization', None)
     if request.method == 'POST':
-        form = TaskForm(request.POST)
+        form = TaskForm(request.POST, user=request.user, organization=org)
         if form.is_valid():
             task = form.save(commit=False)
             task.created_by = request.user
+            if org:
+                task.organization = org
             task.save()
             form.save_m2m()
 
@@ -474,6 +577,8 @@ def task_create_view(request):
                     notification_type=Notification.TYPE_ASSIGNMENT
                 )
 
+            notify_task_created(task, actor=request.user)
+
             messages.success(request, f"Task '{task.title}' created successfully!")
             return redirect('task_detail', pk=task.pk)
         else:
@@ -482,7 +587,12 @@ def task_create_view(request):
         initial = {}
         if 'status' in request.GET and request.GET['status'] in dict(Task.STATUS_CHOICES):
             initial['status'] = request.GET['status']
-        form = TaskForm(initial=initial)
+        if 'project' in request.GET:
+            try:
+                initial['project'] = int(request.GET['project'])
+            except (ValueError, TypeError):
+                pass
+        form = TaskForm(initial=initial, user=request.user, organization=org)
 
     return render(request, 'tasks/task_form.html', {'form': form, 'title': 'Create New Task', 'action_label': 'Create Task'})
 
@@ -492,14 +602,17 @@ def task_edit_view(request, pk):
     task = _visible_task_or_404(request, pk)
 
     # Strict RBAC: Only Admin can edit task details or reassign tasks
-    if not request.user.is_admin_role:
+    if not _is_org_admin(request):
         raise PermissionDenied("Only administrators are permitted to edit task details.")
 
+    org = getattr(request, 'organization', None)
     old_status = task.status
     old_assignee = task.assigned_to
+    old_project = task.project
+    old_labels = set(task.labels.all())
 
     if request.method == 'POST':
-        form = TaskForm(request.POST, instance=task)
+        form = TaskForm(request.POST, instance=task, user=request.user, organization=org)
         if form.is_valid():
             updated_task = form.save()
             changes = []
@@ -529,6 +642,17 @@ def task_edit_view(request, pk):
                         notification_type=Notification.TYPE_ASSIGNMENT
                     )
 
+            # Check project change
+            if old_project != updated_task.project:
+                proj_name = updated_task.project.name if updated_task.project else "None"
+                changes.append(f"Project set to {proj_name}")
+
+            # Check labels change
+            new_labels = set(updated_task.labels.all())
+            if old_labels != new_labels:
+                lbl_names = ", ".join(l.name for l in new_labels) if new_labels else "None"
+                changes.append(f"Labels updated: {lbl_names}")
+
             details_str = "; ".join(changes) if changes else "Task details updated."
             TaskActivityLog.objects.create(
                 task=updated_task,
@@ -537,12 +661,19 @@ def task_edit_view(request, pk):
                 details=details_str
             )
 
+            notify_task_updated(
+                updated_task,
+                actor=request.user,
+                old_status=old_status,
+                old_assignee=old_assignee,
+            )
+
             messages.success(request, f"Task '{updated_task.title}' updated successfully.")
             return redirect('task_detail', pk=updated_task.pk)
         else:
             messages.error(request, "Please fix the errors below.")
     else:
-        form = TaskForm(instance=task)
+        form = TaskForm(instance=task, user=request.user, organization=org)
 
     return render(request, 'tasks/task_form.html', {'form': form, 'title': f'Edit: {task.title}', 'action_label': 'Save Changes', 'task': task})
 
@@ -552,7 +683,7 @@ def task_delete_view(request, pk):
     task = _visible_task_or_404(request, pk)
 
     # Strict RBAC: Only Admin can delete tasks
-    if not request.user.is_admin_role:
+    if not _is_org_admin(request):
         raise PermissionDenied("Only administrators are permitted to delete tasks.")
 
     if request.method == 'POST':
@@ -565,6 +696,7 @@ def task_delete_view(request, pk):
 
 
 @login_required
+@require_POST
 def update_task_status_view(request, pk):
     """
     Explicit status update view permitted for:
@@ -612,6 +744,8 @@ def update_task_status_view(request, pk):
                 task=task,
                 notification_type=Notification.TYPE_STATUS_CHANGE
             )
+
+        notify_task_status_changed(task, actor=request.user, old_status=old_status)
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.content_type == 'application/json':
         return JsonResponse({
@@ -692,8 +826,11 @@ def add_comment_view(request, pk):
 
 @login_required
 def delete_comment_view(request, comment_id):
-    comments = TaskComment.objects.all()
-    if not request.user.is_admin_role:
+    org = getattr(request, 'organization', None)
+    comments = TaskComment.objects.select_related('task')
+    if org:
+        comments = comments.filter(task__organization=org)
+    if not _is_org_admin(request):
         comments = comments.filter(task__assigned_to=request.user)
     comment = get_object_or_404(comments, pk=comment_id)
     task_pk = comment.task.pk
@@ -708,18 +845,6 @@ def delete_comment_view(request, comment_id):
         messages.success(request, "Comment deleted.")
 
     return redirect('task_detail', pk=task_pk)
-
-
-def _admin_only(request):
-    if not request.user.is_admin_role:
-        raise PermissionDenied("Only administrators are permitted to manage this resource.")
-
-
-def _visible_task_or_404(request, pk):
-    tasks = Task.objects.all()
-    if not request.user.is_admin_role:
-        tasks = tasks.filter(assigned_to=request.user)
-    return get_object_or_404(tasks, pk=pk)
 
 
 def _record_checklist_activity(task, actor, details):
@@ -794,18 +919,13 @@ def checklist_delete_view(request, pk, item_id):
 def checklist_toggle_view(request, pk, item_id):
     task = _visible_task_or_404(request, pk)
     item = get_object_or_404(TaskChecklistItem, pk=item_id, task=task)
-    if not request.user.is_admin_role:
-        item.is_completed = not item.is_completed
-        item.save(update_fields=['is_completed', 'updated_at'])
-        _record_checklist_activity(
-            task,
-            request.user,
-            f"Marked checklist item '{item.title}' {'complete' if item.is_completed else 'incomplete'}.",
-        )
-    else:
-        item.is_completed = not item.is_completed
-        item.save(update_fields=['is_completed', 'updated_at'])
-        _record_checklist_activity(task, request.user, f"Toggled checklist item '{item.title}'.")
+    item.is_completed = not item.is_completed
+    item.save(update_fields=['is_completed', 'updated_at'])
+    _record_checklist_activity(
+        task,
+        request.user,
+        f"Marked checklist item '{item.title}' {'complete' if item.is_completed else 'incomplete'}.",
+    )
     return redirect('task_detail', pk=task.pk)
 
 
@@ -834,18 +954,26 @@ def checklist_reorder_view(request, pk, item_id):
 @login_required
 def projects_view(request):
     _admin_only(request)
+    org = getattr(request, 'organization', None)
     if request.method == 'POST':
-        form = ProjectForm(request.POST)
+        form = ProjectForm(request.POST, organization=org)
         if form.is_valid():
             project = form.save(commit=False)
             project.created_by = request.user
+            if org:
+                project.organization = org
             project.save()
             messages.success(request, f"Project '{project.name}' created.")
             return redirect('projects')
     else:
-        form = ProjectForm()
+        form = ProjectForm(organization=org)
+
+    projects_qs = Project.objects.annotate(task_count=Count('tasks'))
+    if org:
+        projects_qs = projects_qs.filter(organization=org)
+
     return render(request, 'tasks/projects.html', {
-        'projects': Project.objects.annotate(task_count=Count('tasks')).order_by('archived', 'name'),
+        'projects': projects_qs.order_by('archived', 'name'),
         'form': form,
     })
 
@@ -853,15 +981,16 @@ def projects_view(request):
 @login_required
 def project_edit_view(request, pk):
     _admin_only(request)
-    project = get_object_or_404(Project, pk=pk)
+    project = _visible_project_or_404(request, pk)
+    org = getattr(request, 'organization', None)
     if request.method == 'POST':
-        form = ProjectForm(request.POST, instance=project)
+        form = ProjectForm(request.POST, instance=project, organization=org)
         if form.is_valid():
             project = form.save()
             messages.success(request, f"Project '{project.name}' updated.")
             return redirect('projects')
     else:
-        form = ProjectForm(instance=project)
+        form = ProjectForm(instance=project, organization=org)
     return render(request, 'tasks/project_form.html', {
         'project': project,
         'form': form,
@@ -873,7 +1002,7 @@ def project_edit_view(request, pk):
 @require_POST
 def project_archive_view(request, pk):
     _admin_only(request)
-    project = get_object_or_404(Project, pk=pk)
+    project = _visible_project_or_404(request, pk)
     project.archived = not project.archived
     project.save(update_fields=['archived', 'updated_at'])
     action = 'archived' if project.archived else 'restored'
@@ -884,16 +1013,25 @@ def project_archive_view(request, pk):
 @login_required
 def labels_view(request):
     _admin_only(request)
+    org = getattr(request, 'organization', None)
     if request.method == 'POST':
-        form = LabelForm(request.POST)
+        form = LabelForm(request.POST, organization=org)
         if form.is_valid():
-            label = form.save()
+            label = form.save(commit=False)
+            if org:
+                label.organization = org
+            label.save()
             messages.success(request, f"Label '{label.name}' created.")
             return redirect('labels')
     else:
-        form = LabelForm()
+        form = LabelForm(organization=org)
+
+    labels_qs = Label.objects.all()
+    if org:
+        labels_qs = labels_qs.filter(organization=org)
+
     return render(request, 'tasks/labels.html', {
-        'labels': Label.objects.all(),
+        'labels': labels_qs.order_by('name'),
         'form': form,
     })
 
@@ -901,15 +1039,16 @@ def labels_view(request):
 @login_required
 def label_edit_view(request, pk):
     _admin_only(request)
-    label = get_object_or_404(Label, pk=pk)
+    label = _visible_label_or_404(request, pk)
+    org = getattr(request, 'organization', None)
     if request.method == 'POST':
-        form = LabelForm(request.POST, instance=label)
+        form = LabelForm(request.POST, instance=label, organization=org)
         if form.is_valid():
             label = form.save()
             messages.success(request, f"Label '{label.name}' updated.")
             return redirect('labels')
     else:
-        form = LabelForm(instance=label)
+        form = LabelForm(instance=label, organization=org)
     return render(request, 'tasks/label_form.html', {
         'label': label,
         'form': form,
@@ -921,7 +1060,8 @@ def label_edit_view(request, pk):
 @require_POST
 def label_delete_view(request, pk):
     _admin_only(request)
-    label = get_object_or_404(Label, pk=pk)
+    label = _visible_label_or_404(request, pk)
     label.delete()
     messages.success(request, "Label deleted.")
     return redirect('labels')
+

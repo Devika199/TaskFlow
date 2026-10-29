@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}TaskFlow Copilot | AI Assistant{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/assistant.css' %}?v=taskflow-copilot-v2">
+{% endblock %}
+
+{% block content %}
+<section class="assistant-page" data-chat-url="{% url 'ai_assistant:message' %}">
+  <header class="assistant-heading">
+    <div>
+      <p class="assistant-eyebrow">TASKFLOW INTELLIGENCE</p>
+      <h1>TaskFlow Assistant</h1>
+      <p class="text-muted mb-0">Ask about your tasks, deadlines, team workloads, and execute workspace changes safely.</p>
+    </div>
+    <span class="assistant-status">
+      <i class="bi bi-shield-check" aria-hidden="true"></i> Uses your TaskFlow permissions
+    </span>
+  </header>
+
+  <div class="assistant-disclosure" role="note">
+    <i class="bi bi-info-circle" aria-hidden="true"></i>
+    <span>Your chat messages and any TaskFlow information needed to answer them are sent to Google Gemini for processing via secure MCP tools. Only ask about information you are permitted to share with that service.</span>
+  </div>
+
+  <section class="assistant-card" aria-label="TaskFlow AI chat">
+    <!-- Quick Suggested Prompts -->
+    <div class="ai-quick-chips px-3 py-2 border-bottom d-flex gap-2 flex-wrap">
+      <button type="button" class="badge-chip" data-quick-prompt="Summarize my assigned tasks">
+        <i class="bi bi-list-task text-primary"></i> My tasks
+      </button>
+      <button type="button" class="badge-chip" data-quick-prompt="List overdue tasks">
+        <i class="bi bi-clock-history text-warning"></i> Overdue
+      </button>
+      <button type="button" class="badge-chip" data-quick-prompt="Give me my daily briefing">
+        <i class="bi bi-sun text-info"></i> Daily briefing
+      </button>
+      {% if user.is_admin_role %}
+      <button type="button" class="badge-chip" data-quick-prompt="Summarize team workload across all active users">
+        <i class="bi bi-people text-success"></i> Team workload
+      </button>
+      {% endif %}
+    </div>
+
+    <!-- Messages Container -->
+    <div class="assistant-messages" id="assistantMessages" role="log" aria-live="polite" aria-relevant="additions">
+      {% for item in chat_history %}
+      <article class="assistant-message assistant-message-{{ item.role }}">
+        <div class="assistant-message-label">
+          {% if item.role == "user" %}
+          <i class="bi bi-person-fill"></i> You
+          {% else %}
+          <i class="bi bi-stars text-primary"></i> TaskFlow Assistant
+          {% endif %}
+        </div>
+        <p>{{ item.text }}</p>
+      </article>
+      {% empty %}
+      <div class="assistant-message assistant-message-model">
+        <div class="assistant-message-label"><i class="bi bi-stars text-primary"></i> TaskFlow Assistant</div>
+        <p>Hi {{ user.display_name }}! I can help you review your TaskFlow work, check deadlines, summarize projects, and organize tasks. What would you like to know?</p>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Loading State -->
+    <div class="assistant-loading-indicator px-3 py-2 d-none" id="assistantLoading">
+      <div class="typing-dots me-2">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+      </div>
+      <span>TaskFlow Copilot is analyzing workspace...</span>
+    </div>
+
+    <!-- Error Alert -->
+    <div class="assistant-error mx-3 mb-2 d-none" id="assistantError" role="alert"></div>
+
+    <!-- Action Confirmation Required -->
+    <div class="assistant-confirmation mx-3 mb-2 d-none" id="assistantConfirmation">
+      <div class="assistant-confirmation-heading">
+        <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+        <span>Action Confirmation Required</span>
+      </div>
+      <p class="assistant-confirmation-body mb-3" id="assistantConfirmationText"></p>
+      <div class="d-flex flex-wrap gap-2 justify-content-end">
+        <button type="button" class="btn btn-sm btn-primary" id="assistantConfirmButton">Confirm change</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="assistantCancelButton">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Composer Form -->
+    <form class="assistant-composer" id="assistantForm">
+      {% csrf_token %}
+      <div class="assistant-composer-inner">
+        <label class="visually-hidden" for="assistantInput">Message TaskFlow Assistant</label>
+        <textarea class="form-control" id="assistantInput" name="message" rows="2" maxlength="4000"
+                  placeholder="Ask about your tasks, deadlines, workloads..." required></textarea>
+        <button class="assistant-send" id="assistantSend" type="submit" aria-label="Send message" title="Send message">
+          <i class="bi bi-send-fill" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="assistant-composer-hint">
+        <span>Enter to send · Shift+Enter for a new line</span>
+        <span class="char-count">0/4000</span>
+      </div>
+    </form>
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/assistant.js' %}?v=taskflow-copilot-v2" defer></script>
+{% endblock %}
