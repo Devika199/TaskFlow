@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render, reverse
@@ -334,21 +335,71 @@ def task_list_view(request):
 def task_calendar_view(request):
     org = getattr(request, 'organization', None)
     is_admin = _is_org_admin(request)
-    month_value = request.GET.get('month', '')
-    try:
-        selected_month = datetime.strptime(month_value, '%Y-%m').date().replace(day=1) if month_value else timezone.localdate().replace(day=1)
-    except ValueError:
-        selected_month = timezone.localdate().replace(day=1)
 
-    month_start = selected_month
-    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-    previous_month = (month_start - timedelta(days=1)).replace(day=1)
-    month_end = next_month - timezone.timedelta(days=1)
+    # 1. View mode (month / week / day)
+    current_view = request.GET.get('view', 'month').lower().strip()
+    if current_view not in ('month', 'week', 'day'):
+        current_view = 'month'
 
-    tasks = _visible_tasks_for_user(request.user, organization=org).filter(
-        due_date__gte=month_start,
-        due_date__lte=month_end,
+    # 2. Date resolution
+    date_param = request.GET.get('date', '').strip()
+    month_param = request.GET.get('month', '').strip()
+
+    ref_date = None
+    if date_param:
+        try:
+            ref_date = datetime.strptime(date_param, '%Y-%m-%d').date()
+        except ValueError:
+            ref_date = None
+
+    if not ref_date and month_param:
+        try:
+            ref_date = datetime.strptime(month_param, '%Y-%m').date().replace(day=1)
+        except ValueError:
+            ref_date = None
+
+    if not ref_date:
+        ref_date = timezone.localdate()
+
+    # Month calculations
+    selected_month = ref_date.replace(day=1)
+    next_month = (selected_month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    previous_month = (selected_month - timedelta(days=1)).replace(day=1)
+    cal_weeks = calendar.Calendar(firstweekday=0).monthdatescalendar(
+        selected_month.year,
+        selected_month.month,
     )
+    month_grid_start = cal_weeks[0][0]
+    month_grid_end = cal_weeks[-1][-1]
+
+    # Week calculations (Monday to Sunday)
+    week_start = ref_date - timedelta(days=ref_date.weekday())
+    week_end = week_start + timedelta(days=6)
+    previous_week = week_start - timedelta(days=7)
+    next_week = week_start + timedelta(days=7)
+    if week_start.month == week_end.month:
+        week_title = f"{week_start.strftime('%b %d')} - {week_end.strftime('%d, %Y')}"
+    elif week_start.year == week_end.year:
+        week_title = f"{week_start.strftime('%b %d')} - {week_end.strftime('%b %d, %Y')}"
+    else:
+        week_title = f"{week_start.strftime('%b %d, %Y')} - {week_end.strftime('%b %d, %Y')}"
+
+    # Day calculations
+    day_date = ref_date
+    previous_day = day_date - timedelta(days=1)
+    next_day = day_date + timedelta(days=1)
+    day_title = day_date.strftime('%A, %B %d, %Y')
+
+    # Query tasks by range depending on view mode
+    tasks_base = _visible_tasks_for_user(request.user, organization=org)
+    if current_view == 'day':
+        tasks = tasks_base.filter(due_date=day_date)
+    elif current_view == 'week':
+        tasks = tasks_base.filter(due_date__gte=week_start, due_date__lte=week_end)
+    else:
+        tasks = tasks_base.filter(due_date__gte=month_grid_start, due_date__lte=month_grid_end)
+
+    # Filtering by assignee
     assignee = request.GET.get('assigned_to', '').strip()
     if is_admin:
         if assignee == 'me':
@@ -360,15 +411,39 @@ def task_calendar_view(request):
     else:
         assignee = 'me'
 
+    # Filtering by status
+    status_param = request.GET.get('status', '').strip().upper()
+    valid_statuses = {choice[0].upper(): choice[0] for choice in Task.STATUS_CHOICES}
+    if status_param in valid_statuses:
+        status_filter = valid_statuses[status_param]
+        tasks = tasks.filter(status=status_filter)
+    else:
+        status_filter = ''
+
+    # Filtering by priority
+    priority_param = request.GET.get('priority', '').strip().upper()
+    valid_priorities = {choice[0].upper(): choice[0] for choice in Task.PRIORITY_CHOICES}
+    if priority_param in valid_priorities:
+        priority_filter = valid_priorities[priority_param]
+        tasks = tasks.filter(priority=priority_filter)
+    else:
+        priority_filter = ''
+
+    # Filtering by project
+    project_filter = request.GET.get('project', '').strip()
+    if project_filter.isdigit():
+        tasks = tasks.filter(project_id=int(project_filter))
+    else:
+        project_filter = ''
+
+    # Group tasks by due date
     tasks_by_day = {}
     for task in tasks.order_by('due_date', 'priority', 'title'):
         tasks_by_day.setdefault(task.due_date, []).append(task)
 
+    # Month grid structure
     weeks = []
-    for week in calendar.Calendar(firstweekday=0).monthdatescalendar(
-        selected_month.year,
-        selected_month.month,
-    ):
+    for week in cal_weeks:
         weeks.append([
             {
                 'date': day,
@@ -379,16 +454,39 @@ def task_calendar_view(request):
             for day in week
         ])
 
+    # Week days structure (7 days)
+    week_days = []
+    for offset in range(7):
+        day = week_start + timedelta(days=offset)
+        week_days.append({
+            'date': day,
+            'weekday_name': day.strftime('%a'),
+            'day_number': day.day,
+            'is_today': day == timezone.localdate(),
+            'tasks': tasks_by_day.get(day, []),
+        })
+
+    # Day tasks structure
+    day_tasks = tasks_by_day.get(day_date, [])
+
+    # Users and Projects for filter dropdowns
     if org:
         users = User.objects.filter(
             organization_memberships__organization=org,
             organization_memberships__is_active=True,
             is_active=True,
         ).distinct().order_by('first_name', 'username')
+        projects = Project.objects.filter(organization=org)
     else:
         users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+        projects = Project.objects.all()
+
+    if not is_admin:
+        projects = projects.filter(tasks__assigned_to=request.user).distinct()
+    projects = projects.order_by('name')
 
     return render(request, 'tasks/calendar.html', {
+        # Preserved existing context keys
         'weeks': weeks,
         'weekdays': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
         'month_title': selected_month.strftime('%B %Y'),
@@ -397,6 +495,28 @@ def task_calendar_view(request):
         'next_month': next_month.strftime('%Y-%m'),
         'current_assignee': assignee,
         'users': users,
+
+        # Multi-view & navigation context keys
+        'current_view': current_view,
+        'reference_date': ref_date,
+        'current_date': ref_date.strftime('%Y-%m-%d'),
+        'week_title': week_title,
+        'week_days': week_days,
+        'previous_week': previous_week.strftime('%Y-%m-%d'),
+        'next_week': next_week.strftime('%Y-%m-%d'),
+        'day_title': day_title,
+        'day_tasks': day_tasks,
+        'previous_day': previous_day.strftime('%Y-%m-%d'),
+        'next_day': next_day.strftime('%Y-%m-%d'),
+
+        # Filter context keys
+        'current_status': status_filter,
+        'current_priority': priority_filter,
+        'current_project': project_filter,
+        'projects': projects,
+        'status_choices': Task.STATUS_CHOICES,
+        'priority_choices': Task.PRIORITY_CHOICES,
+        'can_edit_tasks': is_admin,
     })
 
 
@@ -758,6 +878,97 @@ def update_task_status_view(request, pk):
 
     messages.success(request, f"Status updated to {task.get_status_display()}.")
     return redirect('task_detail', pk=task.pk)
+
+
+@login_required
+@require_POST
+def reschedule_task_view(request, pk):
+    """
+    Explicit task rescheduling endpoint.
+    Permitted for:
+    - Admin (all tasks in org)
+    - Rejects member without edit permission with 403 Forbidden
+    """
+    task = _visible_task_or_404(request, pk)
+
+    if not task.can_edit(request.user):
+        raise PermissionDenied("You do not have permission to reschedule this task.")
+
+    # Parse due_date from JSON or form POST
+    due_date_str = None
+    if request.content_type == 'application/json':
+        try:
+            body = json.loads(request.body.decode('utf-8') if isinstance(request.body, bytes) else request.body)
+            due_date_str = body.get('due_date')
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+            return JsonResponse({'error': 'Invalid JSON body.'}, status=400)
+    else:
+        due_date_str = request.POST.get('due_date')
+
+    new_due_date = None
+    if due_date_str is not None and str(due_date_str).strip() != '':
+        cleaned_str = str(due_date_str).strip()
+        try:
+            new_due_date = datetime.strptime(cleaned_str, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse(
+                {'error': 'Invalid date format. Expected YYYY-MM-DD.'},
+                status=400,
+            )
+
+    old_due_date = task.due_date
+    if old_due_date != new_due_date:
+        with transaction.atomic():
+            task.due_date = new_due_date
+            task.save(update_fields=['due_date', 'updated_at'])
+
+            old_str = old_due_date.strftime('%Y-%m-%d') if old_due_date else 'None'
+            new_str = new_due_date.strftime('%Y-%m-%d') if new_due_date else 'None'
+            if old_due_date and new_due_date:
+                details_text = f"Due date changed from {old_str} to {new_str}."
+            elif new_due_date:
+                details_text = f"Due date set to {new_str}."
+            else:
+                details_text = f"Due date cleared (was {old_str})."
+
+            TaskActivityLog.objects.create(
+                task=task,
+                actor=request.user,
+                action='UPDATED',
+                details=details_text,
+            )
+
+            # Notify assignee if different from actor
+            if task.assigned_to and task.assigned_to != request.user:
+                if new_due_date:
+                    verb = f"rescheduled '{task.title}' to {new_due_date.strftime('%b %d, %Y')}"
+                else:
+                    verb = f"cleared the due date for '{task.title}'"
+
+                create_notification(
+                    recipient=task.assigned_to,
+                    actor=request.user,
+                    verb=verb,
+                    task=task,
+                    notification_type=Notification.TYPE_SYSTEM,
+                )
+
+            notify_task_updated(task, actor=request.user)
+
+    formatted_date = task.due_date.isoformat() if task.due_date else None
+    if task.due_date:
+        msg = f"Task rescheduled to {task.due_date.strftime('%b %d, %Y')}."
+    else:
+        msg = "Due date cleared."
+
+    return JsonResponse({
+        'success': True,
+        'id': task.id,
+        'title': task.title,
+        'due_date': formatted_date,
+        'due_status': task.due_status,
+        'message': msg,
+    })
 
 
 @login_required

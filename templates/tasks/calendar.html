@@ -1,50 +1,310 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Task Calendar{% endblock %}
 
 {% block content %}
-<div class="calendar-toolbar mb-4">
+<div class="calendar-toolbar mb-3">
   <div>
     <h1 class="h3 fw-bold mb-1">Task Calendar</h1>
-    <p class="text-muted mb-0">Tasks with due dates in {{ month_title }}.</p>
+    <p class="text-muted mb-0">
+      {% if current_view == 'week' %}Tasks scheduled for {{ week_title }}.
+      {% elif current_view == 'day' %}Tasks scheduled for {{ day_title }}.
+      {% else %}Tasks with due dates in {{ month_title }}.{% endif %}
+    </p>
   </div>
+
   <div class="d-flex flex-wrap align-items-center gap-2">
-    {% if user.is_admin_role %}
-    <form method="get" class="d-flex align-items-center gap-2">
-      <input type="hidden" name="month" value="{{ current_month }}">
+    <!-- View switcher: Month, Week, Day -->
+    <div class="btn-group calendar-view-switcher" role="group" aria-label="Calendar view switcher">
+      <a class="btn btn-outline-secondary {% if current_view == 'month' %}active{% endif %}"
+         href="{% url 'task_calendar' %}?view=month&amp;month={{ current_month }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}">
+        Month
+      </a>
+      <a class="btn btn-outline-secondary {% if current_view == 'week' %}active{% endif %}"
+         href="{% url 'task_calendar' %}?view=week&amp;date={{ current_date }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}">
+        Week
+      </a>
+      <a class="btn btn-outline-secondary {% if current_view == 'day' %}active{% endif %}"
+         href="{% url 'task_calendar' %}?view=day&amp;date={{ current_date }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}">
+        Day
+      </a>
+    </div>
+
+    <!-- Date Navigation: Prev, Today, Next -->
+    <div class="calendar-date-nav d-flex gap-1" role="group" aria-label="Date navigation">
+      {% if current_view == 'week' %}
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=week&amp;date={{ previous_week }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Previous week">
+        <i class="bi bi-chevron-left" aria-hidden="true"></i><span class="visually-hidden">Previous week</span>
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=week{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Go to current week">
+        Today
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=week&amp;date={{ next_week }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Next week">
+        <i class="bi bi-chevron-right" aria-hidden="true"></i><span class="visually-hidden">Next week</span>
+      </a>
+      {% elif current_view == 'day' %}
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=day&amp;date={{ previous_day }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Previous day">
+        <i class="bi bi-chevron-left" aria-hidden="true"></i><span class="visually-hidden">Previous day</span>
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=day{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Go to today">
+        Today
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=day&amp;date={{ next_day }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Next day">
+        <i class="bi bi-chevron-right" aria-hidden="true"></i><span class="visually-hidden">Next day</span>
+      </a>
+      {% else %}
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=month&amp;month={{ previous_month }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Previous month">
+        <i class="bi bi-chevron-left" aria-hidden="true"></i><span class="visually-hidden">Previous month</span>
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=month{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Go to current month">
+        Today
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="{% url 'task_calendar' %}?view=month&amp;month={{ next_month }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}{% if current_status %}&amp;status={{ current_status }}{% endif %}{% if current_priority %}&amp;priority={{ current_priority }}{% endif %}{% if current_project %}&amp;project={{ current_project }}{% endif %}"
+         aria-label="Next month">
+        <i class="bi bi-chevron-right" aria-hidden="true"></i><span class="visually-hidden">Next month</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Filters bar -->
+<div class="calendar-filter-bar mb-3 p-2 px-3 card-saas">
+  <form method="get" class="row g-2 align-items-center">
+    <input type="hidden" name="view" value="{{ current_view }}">
+    {% if current_view == 'month' %}
+    <input type="hidden" name="month" value="{{ current_month }}">
+    {% else %}
+    <input type="hidden" name="date" value="{{ current_date }}">
+    {% endif %}
+
+    <!-- Status filter -->
+    <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+      <label class="visually-hidden" for="calendarStatus">Filter by status</label>
+      <select class="form-select form-select-sm" name="status" id="calendarStatus" aria-label="Filter by status">
+        <option value="">All statuses</option>
+        {% for val, label in status_choices %}
+        <option value="{{ val }}" {% if current_status == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Priority filter -->
+    <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+      <label class="visually-hidden" for="calendarPriority">Filter by priority</label>
+      <select class="form-select form-select-sm" name="priority" id="calendarPriority" aria-label="Filter by priority">
+        <option value="">All priorities</option>
+        {% for val, label in priority_choices %}
+        <option value="{{ val }}" {% if current_priority == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Project filter -->
+    <div class="col-6 col-sm-6 col-md-3 col-lg-2">
+      <label class="visually-hidden" for="calendarProject">Filter by project</label>
+      <select class="form-select form-select-sm" name="project" id="calendarProject" aria-label="Filter by project">
+        <option value="">All projects</option>
+        {% for proj in projects %}
+        <option value="{{ proj.id }}" {% if current_project == proj.id|stringformat:"s" %}selected{% endif %}>{{ proj.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Assignee filter (Admin/Owner only) -->
+    {% if can_edit_tasks or user.is_admin_role %}
+    <div class="col-6 col-sm-6 col-md-3 col-lg-3">
       <label class="visually-hidden" for="calendarAssignee">Filter by assignee</label>
-      <select class="form-select" name="assigned_to" id="calendarAssignee" aria-label="Filter by assignee">
+      <select class="form-select form-select-sm" name="assigned_to" id="calendarAssignee" aria-label="Filter by assignee">
         <option value="">All assignees</option>
+        <option value="me" {% if current_assignee == 'me' %}selected{% endif %}>Assigned to Me</option>
         <option value="unassigned" {% if current_assignee == 'unassigned' %}selected{% endif %}>Unassigned</option>
         {% for person in users %}
         <option value="{{ person.id }}" {% if current_assignee == person.id|stringformat:"s" %}selected{% endif %}>{{ person.display_name }}</option>
         {% endfor %}
       </select>
-      <button type="submit" class="btn btn-primary">Apply</button>
-    </form>
-    {% endif %}
-    <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary" href="{% url 'task_calendar' %}?month={{ previous_month }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}" aria-label="Previous month">
-        <i class="bi bi-chevron-left" aria-hidden="true"></i><span class="visually-hidden">Previous month</span>
-      </a>
-      <a class="btn btn-outline-secondary" href="{% url 'task_calendar' %}" aria-label="Go to current month">Today</a>
-      <a class="btn btn-outline-secondary" href="{% url 'task_calendar' %}?month={{ next_month }}{% if current_assignee %}&amp;assigned_to={{ current_assignee }}{% endif %}" aria-label="Next month">
-        <i class="bi bi-chevron-right" aria-hidden="true"></i><span class="visually-hidden">Next month</span>
-      </a>
     </div>
-  </div>
+    {% endif %}
+
+    <!-- Filter Actions -->
+    <div class="col-auto d-flex align-items-center gap-2">
+      <button type="submit" class="btn btn-sm btn-primary">
+        <i class="bi bi-funnel-fill me-1"></i>Apply
+      </button>
+      {% if current_assignee or current_status or current_priority or current_project %}
+      <a href="{% url 'task_calendar' %}?view={{ current_view }}{% if current_view == 'month' %}&amp;month={{ current_month }}{% else %}&amp;date={{ current_date }}{% endif %}"
+         class="btn btn-sm btn-outline-secondary"
+         title="Clear filters"
+         aria-label="Clear active filters">
+        <i class="bi bi-x-circle me-1"></i>Clear
+      </a>
+      {% endif %}
+    </div>
+  </form>
 </div>
 
-<section class="card-saas" aria-label="Tasks calendar for {{ month_title }}">
+<!-- Main Calendar Section -->
+<section class="card-saas" aria-label="Tasks calendar for {% if current_view == 'week' %}{{ week_title }}{% elif current_view == 'day' %}{{ day_title }}{% else %}{{ month_title }}{% endif %}">
   <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-    <h2 class="h5 fw-bold mb-0">{{ month_title }}</h2>
+    <h2 class="h5 fw-bold mb-0">
+      {% if current_view == 'week' %}{{ week_title }}
+      {% elif current_view == 'day' %}{{ day_title }}
+      {% else %}{{ month_title }}{% endif %}
+    </h2>
     <div class="d-flex flex-wrap gap-2 small" aria-label="Priority legend">
       <span class="badge badge-priority-high">High priority</span>
       <span class="badge badge-priority-medium">Medium priority</span>
       <span class="badge badge-priority-low">Low priority</span>
     </div>
   </div>
+
   <div class="card-body p-0">
+    {% if current_view == 'week' %}
+    <!-- Week View with Drag-and-Drop Dropzones -->
+    <div class="calendar-week-board-wrapper" role="region" aria-label="Week view: {{ week_title }}">
+      <div class="calendar-week-grid">
+        {% for day in week_days %}
+        <div class="calendar-week-col {% if day.is_today %}is-today{% endif %}">
+          <div class="calendar-week-col-header text-center">
+            <span class="calendar-week-weekday">{{ day.weekday_name }}</span>
+            <span class="calendar-week-day-number {% if day.is_today %}today-badge{% endif %}">{{ day.day_number }}</span>
+          </div>
+          <div class="calendar-week-task-list"
+               data-calendar-dropzone="true"
+               data-date="{{ day.date|date:'Y-m-d' }}"
+               aria-label="Dropzone for {{ day.date|date:'Y-m-d' }}">
+            {% for task in day.tasks %}
+            <div class="calendar-week-task-card priority-{{ task.priority|lower }}"
+                 data-task-id="{{ task.id }}"
+                 data-reschedule-url="{% url 'reschedule_task' task.id %}"
+                 data-can-edit="{% if can_edit_tasks %}true{% else %}false{% endif %}">
+              <div class="calendar-task-card-header d-flex align-items-center justify-content-between gap-1 mb-1">
+                <div class="d-flex align-items-center gap-1 min-w-0">
+                  {% if can_edit_tasks %}
+                  <span class="calendar-drag-handle" role="button" tabindex="0" aria-label="Drag task to reschedule" title="Drag to reschedule">
+                    <i class="bi bi-grip-vertical" aria-hidden="true"></i>
+                  </span>
+                  {% endif %}
+                  <span class="badge badge-priority-{{ task.priority|lower }}">{{ task.get_priority_display }}</span>
+                </div>
+                <span class="badge badge-status-{{ task.status|lower|cut:'_' }}">{{ task.get_status_display }}</span>
+              </div>
+              <a class="calendar-task-title fw-semibold d-block text-decoration-none" href="{% url 'task_detail' task.id %}" title="{{ task.title }}">
+                {{ task.title }}
+              </a>
+              {% if task.project or task.assigned_to %}
+              <div class="calendar-task-meta mt-1 pt-1 border-top d-flex justify-content-between align-items-center small text-muted">
+                {% if task.project %}
+                <span class="text-truncate" title="Project: {{ task.project.name }}">
+                  <i class="bi bi-folder me-1 opacity-75"></i>{{ task.project.name }}
+                </span>
+                {% else %}
+                <span></span>
+                {% endif %}
+                {% if task.assigned_to %}
+                <span class="text-truncate ms-1" title="Assigned to {{ task.assigned_to.display_name }}">
+                  <i class="bi bi-person me-1 opacity-75"></i>{{ task.assigned_to.display_name }}
+                </span>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+            {% empty %}
+            <div class="calendar-week-empty-slot text-center py-3 text-muted small">
+              <span>No tasks</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% elif current_view == 'day' %}
+    <!-- Day View -->
+    <!-- Note: Day view displays only a single date, so drag-and-drop across dates is disabled in this view. Use Month or Week view for drag-and-drop rescheduling. -->
+    <div class="calendar-day-view p-3" role="region" aria-label="Day view: {{ day_title }}">
+      {% if day_tasks %}
+      <div class="calendar-day-task-grid">
+        {% for task in day_tasks %}
+        <div class="calendar-day-task-card p-3 border rounded priority-{{ task.priority|lower }}">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="badge badge-priority-{{ task.priority|lower }}">{{ task.get_priority_display }} Priority</span>
+              <span class="badge bg-secondary-subtle text-secondary">{{ task.get_status_display }}</span>
+              {% if task.project %}
+              <span class="badge bg-light text-dark border"><i class="bi bi-folder me-1"></i>{{ task.project.name }}</span>
+              {% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              {% if task.due_status == 'overdue' %}
+              <span class="badge bg-danger-subtle text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>Overdue</span>
+              {% elif task.due_status == 'today' %}
+              <span class="badge bg-warning-subtle text-warning"><i class="bi bi-clock me-1"></i>Due Today</span>
+              {% endif %}
+            </div>
+          </div>
+          <h3 class="h6 fw-bold mb-1">
+            <a href="{% url 'task_detail' task.id %}" class="calendar-day-task-link text-decoration-none">
+              {{ task.title }}
+            </a>
+          </h3>
+          {% if task.description %}
+          <p class="text-muted small mb-2 text-truncate" style="max-width: 680px;">{{ task.description }}</p>
+          {% endif %}
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2 pt-2 border-top small text-muted">
+            <div>
+              {% if task.assigned_to %}
+              <span><i class="bi bi-person me-1"></i>Assigned to <strong>{{ task.assigned_to.display_name }}</strong></span>
+              {% else %}
+              <span class="fst-italic text-muted">Unassigned</span>
+              {% endif %}
+            </div>
+            <div>
+              <a href="{% url 'task_detail' task.id %}" class="btn btn-sm btn-outline-primary py-0 px-2">
+                View Task <i class="bi bi-arrow-right ms-1"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="calendar-empty-day text-center py-5">
+        <div class="mb-3">
+          <i class="bi bi-calendar2-check text-muted" style="font-size: 3rem;"></i>
+        </div>
+        <h3 class="h5 fw-bold mb-1">No tasks scheduled</h3>
+        <p class="text-muted small mb-3">There are no tasks due on {{ day_title }}.</p>
+        {% if can_edit_tasks %}
+        <a href="{% url 'task_create' %}" class="btn btn-sm btn-primary">
+          <i class="bi bi-plus-lg me-1"></i>Create New Task
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    {% else %}
+    <!-- Month View (Default) with Drag-and-Drop Dropzones -->
     <div class="calendar-grid" role="grid" aria-label="{{ month_title }}">
       {% for weekday in weekdays %}
       <div class="calendar-weekday" role="columnheader">{{ weekday }}</div>
@@ -53,18 +313,36 @@
         {% for day in week %}
         <div class="calendar-day {% if not day.in_month %}is-outside-month{% endif %} {% if day.is_today %}is-today{% endif %}" role="gridcell" aria-label="{{ day.date|date:'l, F j, Y' }}">
           <span class="calendar-day-number">{{ day.date.day }}</span>
-          <div class="calendar-task-list">
+          <div class="calendar-task-list"
+               data-calendar-dropzone="true"
+               data-date="{{ day.date|date:'Y-m-d' }}"
+               aria-label="Dropzone for {{ day.date|date:'Y-m-d' }}">
             {% for task in day.tasks %}
-            <a class="calendar-task priority-{{ task.priority|lower }}" href="{% url 'task_detail' task.id %}"
-               title="{{ task.title }} — {{ task.get_priority_display }} priority{% if task.assigned_to %}, {{ task.assigned_to.display_name }}{% endif %}">
-              {{ task.title }}
-            </a>
+            <div class="calendar-task priority-{{ task.priority|lower }}"
+                 data-task-id="{{ task.id }}"
+                 data-reschedule-url="{% url 'reschedule_task' task.id %}"
+                 data-can-edit="{% if can_edit_tasks %}true{% else %}false{% endif %}">
+              {% if can_edit_tasks %}
+              <span class="calendar-drag-handle" role="button" tabindex="0" aria-label="Drag task to reschedule" title="Drag to reschedule">
+                <i class="bi bi-grip-vertical" aria-hidden="true"></i>
+              </span>
+              {% endif %}
+              <a class="calendar-task-link text-truncate" href="{% url 'task_detail' task.id %}"
+                 title="{{ task.title }} — {{ task.get_priority_display }} priority{% if task.assigned_to %}, {{ task.assigned_to.display_name }}{% endif %}">
+                {{ task.title }}
+              </a>
+            </div>
             {% endfor %}
           </div>
         </div>
         {% endfor %}
       {% endfor %}
     </div>
+    {% endif %}
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/calendar.js' %}"></script>
 {% endblock %}
